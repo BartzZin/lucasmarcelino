@@ -26,9 +26,12 @@
       const top=rect.top+scroll-shifted;
       const bottom=rect.bottom+scroll-shifted;
       item.travel=travel;
-      item.enter={start:top-viewport*.99,end:top-viewport*.75,order:1};
+      item.enter=item.node.closest('.intro') && top<viewport
+        ? null
+        : {start:top-viewport*.99,end:top-viewport*.75,order:1};
       item.exit={start:bottom-viewport*.23,end:bottom-viewport*.025,order:0};
-      intervals.push(item.enter,item.exit);
+      if(item.enter) intervals.push(item.enter);
+      intervals.push(item.exit);
     }
     for(const interval of intervals) interval.center=(interval.start+interval.end)/2;
     intervals.sort((a,b)=>a.center-b.center || a.order-b.order);
@@ -45,7 +48,7 @@
   function moveText(scroll, motion){
     const phase=({start,end})=>end>start ? smooth((scroll-start)/(end-start)) : Number(scroll>=end);
     for(const item of textItems){
-      const inProgress=motion ? phase(item.enter) : 1;
+      const inProgress=motion && item.enter ? phase(item.enter) : 1;
       const outProgress=motion ? phase(item.exit) : 0;
       const direction=sideMotion.matches ? 1 : -1;
       const shift=Math.round((1-inProgress+direction*outProgress)*item.travel*100)/100;
