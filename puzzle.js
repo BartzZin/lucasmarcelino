@@ -9,7 +9,7 @@
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
   const clamp = n => Math.max(0, Math.min(1, n));
   const smooth = n => clamp(n) ** 2 * (3 - 2 * clamp(n));
-  const thickness = 0.21;
+  const thickness = 0.26;
   const tiles = [
     // Edges run clockwise from the top. Adjacent tabs have opposing signs.
     { x: -.5, z: -.5, edge: [0, 1, -1, 0], spread: [-.40, -.25, .62], twist: -.19, tilt: .13, start: .02, end: .53, color: [194, 155, 238] },
@@ -159,9 +159,93 @@
   let target = 0, shown = 0, frame = 0, previous = 0, phase = 0;
   let onScreen = true, replay = null;
 
-  function drawDust(time, progress) {
-    const centerX = width*.5, centerY = height*.49;
-    const radius = Math.min(width, height*1.4);
+  const main=document.querySelector('#principal');
+  const intro=main.querySelector('.intro');
+  const chapters=[...main.querySelectorAll('.story section')];
+  const unit=clamp, ease=smooth, tau=Math.PI*2;
+  const mix=(a,b,t)=>a+(b-a)*t;
+  let layout=[], hero=null, flight=null, distance=1, paused=false;
+  function measure() {
+    const bounds=canvas.getBoundingClientRect();
+    width=bounds.width; height=bounds.height; ratio=Math.min(2,devicePixelRatio||1);
+    if (!width || !height) return;
+    const pixelsX=Math.round(width*ratio), pixelsY=Math.round(height*ratio);
+    if(canvas.width!==pixelsX || canvas.height!==pixelsY){canvas.width=pixelsX;canvas.height=pixelsY;}
+    const sy=window.scrollY;
+    const heroBox=intro.getBoundingClientRect();
+    hero={bottom:heroBox.bottom+sy};
+    const reserved=main.querySelector('.mobile-flight')?.getBoundingClientRect();
+    flight=reserved ? {x:reserved.left+reserved.width/2,y:reserved.top+sy+reserved.height/2,w:reserved.width,h:reserved.height} : null;
+    layout=chapters.map(section=>{
+      const box=section.getBoundingClientRect();
+      const inner=section.querySelector('.chapter-inner') || section.querySelector('h2') || section;
+      const content=inner.getBoundingClientRect();
+      const onLeft = (content.left+content.right)/2 < width/2;
+      const gap=onLeft ? width-content.right : content.left;
+      return {top:box.top+sy,bottom:box.bottom+sy,x:onLeft ? width-gap/2 : gap/2,free:gap};
+    });
+    distance=Math.max(1,document.documentElement.scrollHeight-window.innerHeight);
+    target=unit(window.scrollY/distance);
+    refresh();
+  }
+
+  function frameAt(scrollY) {
+    const progress=unit(scrollY/distance);
+    if(width<=800){
+      const railX=width-26;
+      const railY=height*(.47+.23*Math.sin(progress*tau*2.25-.6));
+      const slot=flight||{x:width*.5,y:hero.bottom+85,w:width,h:160};
+      const center=slot.y-scrollY;
+      const slotUnit=Math.min(slot.w*.152,slot.h*.25,75);
+      const lift=ease((height*.23+slot.h*.37-center)/(height*.23+slot.h*.37));
+      return {x:mix(slot.x,railX,lift),y:mix(center,railY,lift),size:mix(slotUnit,9.6,lift),rail:lift};
+    }
+
+    let anchorX=width*.76;
+    let size=Math.min(width*.105,height*.166,190);
+    let swing=0,local=.5;
+    const focus=scrollY+height*.49;
+    // Center changes only near a chapter boundary, through its whitespace.
+    for(const row of layout){
+      const blend=ease((focus-row.top+height*.18)/(height*.36));
+      if(blend<=0) break;
+      const crosses=Math.abs(row.x-anchorX)>width*.25;
+      if(crosses && blend<1) swing=Math.sin(Math.PI*blend);
+      anchorX=mix(anchorX,row.x,blend);
+      size=mix(size,Math.max(20,Math.min(row.free*.180,height*.142,152)),blend);
+      local=mix(local,unit((focus-row.top)/(row.bottom-row.top||1)),blend);
+    }
+    const afterIntro=ease((focus-(layout[0]?.top??Infinity)+height*.18)/(height*.36));
+    const drift=Math.sin(local*tau*.74-.3)*height*.14;
+    return {x:anchorX,y:mix(height*.44,height*.47+drift,afterIntro)-height*.23*swing,size:size*(1-.52*swing),rail:0};
+  }
+
+  function drawDust(time, progress, centerX, centerY, radius) {
+    // Two fine ribbons follow the travelling sculpture in its local orbit.
+    ctx.save();
+    ctx.translate(centerX,centerY);
+    for (let lane=0;lane<2;lane++) {
+      const rx=radius*(lane ? .46 : .49), ry=radius*(lane ? .16 : .22);
+      const tilt=lane ? .27 : -.43;
+      const end=time*(lane ? -.16 : .19)+progress*2.1+(lane ? 2.5 : .7);
+      const rgb=lane ? '165,244,200' : '208,161,255';
+      const tipX=rx*Math.cos(end), tipY=ry*Math.sin(end);
+      ctx.save();
+      ctx.rotate(tilt);
+      ctx.beginPath();
+      ctx.ellipse(0,0,rx,ry,0,end-2.55,end);
+      ctx.strokeStyle='rgba('+rgb+',.44)';
+      ctx.lineWidth=1.1;
+      ctx.stroke();
+      const halo=ctx.createRadialGradient(tipX,tipY,0,tipX,tipY,6);
+      halo.addColorStop(0,'rgba('+rgb+',.68)');
+      halo.addColorStop(.4,'rgba('+rgb+',.36)');
+      halo.addColorStop(1,'rgba('+rgb+',0)');
+      ctx.fillStyle=halo;
+      ctx.fillRect(tipX-6,tipY-6,12,12);
+      ctx.restore();
+    }
+    ctx.restore();
     for (let i = 0; i < 17; i++) {
       const t = i*2.40 + time*(.12 + i%3*.037) + progress*.44;
       const orbit = radius*(.31 + (i%5)*.037);
@@ -186,9 +270,9 @@
     }
   }
   function draw(progress) {
-    if (width < 2 || height < 2) return;
+    if (!hero || width < 2 || height < 2) return;
     const animated = !motion.matches;
-    const yaw = .78 + progress*.26 + (animated ? Math.sin(phase*.44)*.085 + cursor.x*.14 : 0);
+    const yaw = .78 + Math.sin(progress*2.1)*.47 + (animated ? Math.sin(phase*.44)*.13 + cursor.x*.14 : 0);
     const pitch = .57 + progress*.075 + (animated ? Math.sin(phase*.53)*.035 + cursor.y*.06 : 0);
     const camera = {sin:Math.sin(yaw), cos:Math.cos(yaw), pitch, lift:Math.sqrt(1-pitch*pitch)};
     const scene = tiles.map((tile,index) => geometry(tile,progress,phase,camera,index)).sort((a,b) => a.depth-b.depth);
@@ -196,12 +280,18 @@
     const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
     const left = Math.min(...xs), right = Math.max(...xs);
     const rear = Math.min(...ys), near = Math.max(...ys);
-    const scale = Math.min(width*.91/(right-left), height*.79/(near-rear), width*.30);
+    const stage=frameAt(window.scrollY);
+    // Autoframe the volumetric puzzle in the whitespace offered by each chapter.
+    const footprint=stage.size*3.60;
+    const scale=Math.min(footprint/(right-left),footprint*.83/(near-rear));
+    const floatX=animated ? Math.sin(phase*.36)*scale*.055*(1-stage.rail) : 0;
+    const centerX=stage.x+floatX, centerY=stage.y;
+
     ctx.setTransform(ratio,0,0,ratio,0,0);
     ctx.clearRect(0,0,width,height);
-    if (animated) drawDust(phase,progress);
+    if (animated && stage.rail<.75) drawDust(phase,progress,centerX,centerY,footprint*1.12);
     const bob = animated ? Math.sin(phase*.95)*scale*.029 : 0;
-    ctx.translate(width*.5-(left+right)*scale/2,height*.48+bob-(rear+near)*scale/2);
+    ctx.translate(centerX-(left+right)*scale/2,centerY+bob-(rear+near)*scale/2);
     ctx.scale(scale,scale);
     ctx.save();
     ctx.translate((left+right)/2, near+.14);
@@ -232,11 +322,11 @@
     if (!onScreen || document.hidden) return;
     const active = replay || Math.abs(target-shown)>.001 || Math.abs(cursor.toX-cursor.x)>.01 || Math.abs(cursor.toY-cursor.y)>.01;
     const elapsed = time - (previous || time-40);
-    if (elapsed < (active ? 14 : 40) && !motion.matches) { refresh(); return; }
+    if (elapsed < (active ? 14 : 40) && !motion.matches && !paused) { refresh(); return; }
     const dt = Math.min(80,elapsed);
     previous = time;
     const before = shown;
-    if (!motion.matches) {
+    if (!motion.matches && !paused) {
       phase += dt/1000;
       shown = replay ? replayProgress(dt/1000) : shown+(target-shown)*(1-Math.exp(-dt/64));
       if (!replay && Math.abs(target-shown)<.0006) shown = target;
@@ -246,28 +336,23 @@
       cursor.y += (cursor.toY-cursor.y)*ease;
     }
     draw(motion.matches ? 1 : shown);
-    if (!motion.matches) refresh();
+    if (!motion.matches && !paused) refresh();
   }
   function refresh() {
     if (!frame && onScreen && !document.hidden) frame = requestAnimationFrame(tick);
   }
-  function resize() {
-    const box = canvas.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    if (box.width === width && box.height === height && dpr === ratio) return;
-    width = box.width; height = box.height; ratio = dpr;
-    canvas.width = Math.round(width*ratio);
-    canvas.height = Math.round(height*ratio);
+  function scrollChanged(){
+    target=clamp(window.scrollY/distance);
     refresh();
   }
-  window.addEventListener('cv-progress', event => {
-    if (!Number.isFinite(event.detail)) return;
-    target = clamp(event.detail);
-    if (!motion.matches) refresh();
+  window.addEventListener('scroll',scrollChanged,{passive:true});
+  window.addEventListener('cv-progress', e=>{
+    if(Number.isFinite(e.detail)){target=clamp(e.detail);refresh();}
   });
+  window.addEventListener('cv-pause', e=>{paused=e.detail===true;previous=0;refresh();});
   window.addEventListener('cv-replay', () => {
     if (motion.matches) return;
-    replay = { from: shown, elapsed: 0 };
+    paused=false; previous=0; replay = { from: shown, elapsed: 0 };
     refresh();
   });
   // Stage layout can make the canvas pointer-transparent. Sample the pointer
@@ -293,13 +378,14 @@
     pulses.fill(-10);
     visibilityChanged();
   });
-  window.addEventListener('resize', resize, { passive: true });
-  if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+  window.addEventListener('resize', measure, { passive: true });
+  if (window.ResizeObserver) new ResizeObserver(measure).observe(main);
   if (window.IntersectionObserver) {
     new IntersectionObserver(entries => {
       onScreen = entries[0].isIntersecting;
       visibilityChanged();
     }).observe(canvas);
   }
-  resize();
+  document.fonts?.ready.then(measure);
+  measure();
 })();
