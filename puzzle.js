@@ -44,6 +44,7 @@
     [.37,.41,1.8],[.22,.46,1.1],[-.23,.47,3.0],[-.38,.39,1.1],[-.49,.25,1.6]
   ];
   let width=0,height=0,ratio=1,layout=[],marks=[0,1],flight=null,hero=null,distance=1;
+  let mobileRail=null, mobileDock=null;
   let target=0,position=0,clock=0,previous=0,frame=0,ready=false;
   let painted=null;
   let paintedScroll=-Infinity;
@@ -70,6 +71,21 @@
     hero={x:introBox.right+heroGap/2,free:heroGap,top:introBox.top+sy,h:introBox.height};
     const slot=main.querySelector('.mobile-flight')?.getBoundingClientRect();
     flight=slot&&slot.height ? {x:slot.left+slot.width/2,y:slot.top+sy+slot.height/2,w:slot.width,h:slot.height} : null;
+    if(width<=800){
+      const textEdge=Math.max(0,...chapters.filter(section=>section.id!=='contato').map(
+        section=>(section.querySelector('.chapter-inner')||section).getBoundingClientRect().right
+      ));
+      const free=Math.max(1,width-textEdge);
+      mobileRail={x:textEdge+free*.52,w:free*.79};
+      const contact=main.querySelector('#contato');
+      const panel=contact?.querySelector('.contact-panel')?.getBoundingClientRect();
+      const start=contact?.getBoundingClientRect().top;
+      const gap=panel ? panel.top-start : 0;
+      mobileDock=gap>50 ? {
+        x:panel.left+panel.width/2,y:sy+start+gap*.50,
+        w:Math.min(gap*.70,width*.50),gap
+      } : null;
+    }
     layout=chapters.map(section=>{
       const box=section.getBoundingClientRect();
       const content=(section.querySelector('.chapter-inner')||section).getBoundingClientRect();
@@ -106,7 +122,25 @@
       const rail=smooth(displayScroll/Math.max(60,slot.y-height*.32));
       const railY=height*(.47+(gentle ? .055 : .23)*Math.sin(position*tau*2.25-.6));
       const lift=smooth((height*.32-slot.y+displayScroll)/(height*.22));
-      return {x:mix(slot.x,width-21,rail),y:mix(cy,railY,lift),w:mix(Math.min(slot.w*.70,slot.h*.73),32,rail),rail};
+      const layout={
+        x:mix(slot.x,mobileRail.x,rail),
+        y:mix(cy,railY,lift),
+        w:mix(Math.min(slot.w*.77,slot.h*.79),mobileRail.w,rail),
+        rail
+      };
+      if(!mobileDock || rail<1) return layout;
+      // Approach the reserved contact gap vertically in the reading margin.
+      // Only move sideways after reaching its actual document-space center.
+      const remaining=distance-displayScroll;
+      const approach=Math.min(height*.53,Math.max(190,mobileDock.gap*2.2));
+      const align=smooth((approach-remaining)/(approach*.55));
+      const pocketY=mobileDock.y-sy;
+      const visible=smooth((height-pocketY-mobileDock.w*.62)/(mobileDock.w*.35));
+      const cross=smooth((approach*.45-remaining)/(approach*.42))*visible;
+      layout.y=mix(layout.y,pocketY,align);
+      layout.x=mix(layout.x,mobileDock.x,cross);
+      layout.w=mix(layout.w,mobileDock.w,cross);
+      return layout;
     }
     const readingHeight=Math.min(height,hero.h/.82);
     const focus=sy+readingHeight*.46;

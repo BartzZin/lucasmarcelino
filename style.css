@@ -148,12 +148,14 @@ footer {
   .intro { width: 100%; min-height: auto; padding: 37px 0 0; }
   h1 { font-size: clamp(50px,17.5vw,116px); }
   .intro p { margin: 18px 0; }.actions { gap: 9px; }.actions a { font-size: 13px; padding: 9px 13px; }
-  .mobile-flight { display: block; height: clamp(160px,35vh,320px); }
+  .mobile-flight { display: block; height: clamp(195px,38svh,348px); }
   .story section { padding: 43px 0; }
-  .chapter-inner { width: calc(100% - 40px); }
+  .story section:not(#contato) .chapter-inner { width: calc(100% - clamp(70px,23vw,148px)); }
   .story section:nth-child(even) .chapter-inner { margin-left: 0; }
-  h2 { font-size: clamp(35px,9vw,52px); }
+  h2 { font-size: clamp(31px,8.3vw,52px); }
+  .chapter-inner :is(h2,h3) { overflow-wrap: anywhere; }
   .archive li { display: block; }.archive time { display: block; margin: 0 0 7px; }
+  .story #contato { padding-top: clamp(130px,34vw,200px); }
   #contato .contact-panel { width: calc(100% - 44px); }
   #contato h2 { font-size: clamp(35px,8vw,62px); }
 }
@@ -217,6 +219,17 @@ footer {
     transform: translateX(-115%);
   }
   .whatsapp:is(:hover,:focus-visible)::before { animation: link-sheen .58s ease-out; }
+}
+@media screen and (width > 800px) {
+  .story section:nth-child(even) { --text-side: 1; }
+  [data-scroll-text] {
+    --text-lateral: calc(var(--text-shift,0px) * var(--text-side,-1));
+    transform: translateX(var(--text-lateral));
+    clip-path: inset(
+      -8px max(0px,var(--text-lateral))
+      -8px max(0px,calc(-1 * var(--text-lateral)))
+    );
+  }
 }
 @keyframes link-sheen { to { transform: translateX(115%); } }
 @media(prefers-reduced-motion:reduce) {

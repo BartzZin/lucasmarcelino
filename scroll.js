@@ -4,6 +4,7 @@
   const milestones = [...archive.querySelectorAll('time')];
   const root = document.documentElement;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const sideMotion = matchMedia('(width > 800px)');
   const clamp = n => Math.max(0, Math.min(1, n));
   const smooth = n => { const t=clamp(n); return t*t*(3-2*t); };
   const textItems = Array.from(document.querySelectorAll(
@@ -14,7 +15,9 @@
   let textLayoutDirty = true;
 
   function measureText(viewport, scroll){
-    const travel = Math.max(12, Math.min(26, viewport*.031));
+    const travel = sideMotion.matches
+      ? Math.min(84,root.clientWidth*.043)
+      : Math.max(12,Math.min(26,viewport*.031));
     const intervals = [];
     for(const item of textItems){
       const rect=item.node.getBoundingClientRect();
@@ -44,7 +47,8 @@
     for(const item of textItems){
       const inProgress=motion ? phase(item.enter) : 1;
       const outProgress=motion ? phase(item.exit) : 0;
-      const shift=Math.round((1-inProgress-outProgress)*item.travel*100)/100;
+      const direction=sideMotion.matches ? 1 : -1;
+      const shift=Math.round((1-inProgress+direction*outProgress)*item.travel*100)/100;
       const opacity=Math.round((1-(1-inProgress)*.66-outProgress*.64)*1000)/1000;
       if(shift===item.shift && opacity===item.opacity) continue;
       item.shift=shift;
