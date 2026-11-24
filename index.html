@@ -14,31 +14,55 @@
   <a class="skip" href="#principal">Pular para o currículo</a>
   <header class="bar">
     <a class="identity" href="#inicio" aria-label="Lucas Marcelino Lara, início"><b>LML</b><span> / Lucas Marcelino Lara</span></a>
-    <nav aria-label="Navegação principal"><a href="#trajetoria">Trajetória</a><a href="#projetos">Projetos</a><a href="https://www.linkedin.com/in/lucas-marcelino-000327238/">LinkedIn ↗</a></nav>
+    <nav aria-label="Navegação principal"><a href="#trajetoria">Trajetória</a><a href="#projetos">Projetos</a><a href="#contato">Contato ↓</a></nav>
   </header>
   <main id="principal">
     <section class="intro" aria-labelledby="nome">
-      <h1 id="nome">Lucas<br><span>Marcelino Lara.</span></h1>
+      <h1 id="nome"><span>Lucas</span> <span>Marcelino</span> <em>Lara.</em></h1>
       <p>Desenvolvedor e analista de sistemas na Consisa Sistemas.</p>
       <a class="explore" href="#trajetoria">Explorar trajetória <span aria-hidden="true">↓</span></a>
     </section>
-    <aside class="model" aria-hidden="true"><canvas id="puzzle"></canvas></aside>
+    <aside class="model" aria-label="Montagem interativa do currículo">
+      <div class="space"><canvas id="puzzle" aria-hidden="true"></canvas></div>
+      <div class="console"><span id="stage">01 / 04 · Em órbita</span><button id="replay" type="button" hidden>↻ Reproduzir montagem</button></div>
+    </aside>
     <div class="story">
       <section id="trajetoria">
-        <h2>Trajetória</h2>
+        <h2><i aria-hidden="true">01</i> Trajetória</h2>
         <article class="piece"><small>Experiência</small><h3>Consisa Sistemas</h3><p>Atuo com desenvolvimento e análise de sistemas em Francisco Beltrão, Paraná.</p></article>
         <article class="piece"><small>Formação</small><h3>UNIPAR</h3><p>Sou tecnólogo em Sistemas pela Universidade Paranaense.</p></article>
         <article class="piece"><small>Pós-graduação · Projetos acadêmicos</small><h3>UTFPR</h3><p>Nos estudos de aprendizado de máquina, implemento redes neurais e comparo o desempenho dos modelos em experimentos com Python.</p></article>
       </section>
+      <section id="tecnologias">
+        <h2><i aria-hidden="true">02</i> Tecnologias</h2>
+        <article class="piece"><small>Aplicações</small><h3>Do desktop à web</h3><p>Meus projetos passam por formulários em Delphi, aplicações em PHP e Laravel e serviços em Python. No AutoSom, essas camadas trabalham juntas: o desktop envia o áudio, a API faz a análise e o SQLite guarda o histórico.</p></article>
+        <article class="piece"><small>Dados</small><h3>Do dado bruto ao experimento</h3><p>Uso Pandas e NumPy para preparar dados e Matplotlib para visualizar padrões. Nos estudos de classificação, trabalho com scikit-learn para comparar modelos, parâmetros e estratégias de validação.</p></article>
+        <article class="piece"><small>Formação complementar</small><h3>Estudos na Alura</h3><p>Windows Forms com C#, Entity Framework Core e Docker fazem parte do meu percurso de estudos.</p></article>
+        <article class="piece"><small>Experimentos pessoais</small><h3>Flask e geração de imagens</h3><p>Também compartilhei um CRUD em Flask com PostgreSQL e um protótipo de geração local de imagens com Stable Diffusion XL. São duas maneiras de explorar Python além dos experimentos de classificação.</p></article>
+      </section>
       <section id="projetos">
-        <h2>Projetos</h2>
+        <h2><i aria-hidden="true">03</i> Projetos</h2>
         <article class="piece"><small>Delphi 12 · FastAPI · SQLite</small><h3><a href="https://github.com/BartzZin/ProjetoIntegrador">AutoSom Diagnóstico <span aria-hidden="true">↗</span></a></h3><p>Construí uma aplicação desktop que envia gravações de motores a uma API em Python. O modelo distingue sons normais de anomalias acústicas, e o aplicativo salva o resultado no histórico local.</p></article>
         <article class="piece"><small>Python · scikit-learn</small><h3><a href="https://github.com/BartzZin/AnaliseDEEPLearning">Rede neural multicamadas <span aria-hidden="true">↗</span></a></h3><p>Comparei o efeito da normalização, da taxa de aprendizado e da quantidade de neurônios em um classificador. Avaliei os resultados com validação cruzada e exportei as métricas em CSV.</p></article>
         <article class="piece"><small>Python · Classificação binária</small><h3><a href="https://github.com/BartzZin/ProjetoDeepLearning">Treinamento de um Perceptron <span aria-hidden="true">↗</span></a></h3><p>Implementei um treinamento por épocas para acompanhar como o classificador aprende, com uma interface gráfica para explorar o experimento.</p></article>
       </section>
+      <section id="arquivo">
+        <h2><i aria-hidden="true">04</i> Arquivo</h2>
+        <p class="section-note">Uma linha do tempo dos meus repositórios públicos.</p>
+        <ol class="archive">
+          <li class="piece"><time datetime="2023-06">Jun 2023</time><div><h3><a href="https://github.com/BartzZin/SismarDelphi">Sismar Delphi ↗</a></h3><p>Aplicação em Pascal com formulários e acesso a banco de dados.</p></div></li>
+          <li class="piece"><time datetime="2023-12">Dez 2023</time><div><h3><a href="https://github.com/BartzZin/DesafioConsisaJunior">Desafio Consisa Júnior ↗</a></h3><p>Resolução de um desafio de programação em Delphi.</p></div></li>
+          <li class="piece"><time datetime="2024-03">Mar 2024</time><div><h3><a href="https://github.com/BartzZin/DensenvolvimentoAPO">Desenvolvimento APO ↗</a></h3><p>Projeto acadêmico de desenvolvimento web com PHP e Laravel.</p></div></li>
+          <li class="piece"><time datetime="2025-12">Dez 2025</time><div><h3><a href="https://github.com/BartzZin/KDDCriptoAtivos">KDD em criptoativos ↗</a></h3><p>Tratei lacunas e duplicatas nas séries de preços para comparar a volatilidade do Bitcoin e de altcoins.</p></div></li>
+          <li class="piece"><time datetime="2026-05">Mai 2026</time><div><h3><a href="https://github.com/BartzZin/AutoEncoder">Autoencoder ↗</a></h3><p>Explorei como remover ruído de imagens de dígitos manuscritos do MNIST e medir o efeito do pré-treinamento na classificação.</p></div></li>
+          <li class="piece"><time datetime="2026-10">Out 2026</time><div><h3><a href="https://github.com/BartzZin/mlops-pipeline">Pipeline de MLOps ↗</a></h3><p>Separei preparação, treino, avaliação e predição em etapas para agrupar coordenadas geográficas com K-Means. O pipeline inclui testes e registra os resultados em JSON.</p></div></li>
+        </ol>
+      </section>
       <section id="contato">
-        <h2>Contato</h2>
-        <div class="links"><a href="https://www.linkedin.com/in/lucas-marcelino-000327238/">Conversar no LinkedIn ↗</a><a href="https://github.com/BartzZin">Perfil no GitHub ↗</a></div>
+        <h2>Vamos conversar?</h2>
+        <a class="whatsapp" href="https://wa.me/5546984159384">Abrir WhatsApp ↗</a>
+        <p class="phone">+55 (46) 98415-9384</p>
+        <div class="links"><a href="https://www.linkedin.com/in/lucas-marcelino-000327238/">LinkedIn ↗</a><a href="https://github.com/BartzZin">GitHub ↗</a></div>
       </section>
     </div>
   </main>
