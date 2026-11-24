@@ -58,21 +58,30 @@
     tile.ring = ring;
   }
 
-  function geometry(tile, progress, phase, camera, index) {
-    const open = 1 - smooth((progress - tile.start) / (tile.end - tile.start));
+  function geometry(tile, progress, phase, camera, index, chapter) {
+    const spread = 1 - smooth((progress - tile.start) / (tile.end - tile.start));
+    const stroke = smooth((chapter.local - index*.045)/(.83-index*.045));
+    const flourish = chapter.strength * Math.sin(stroke*Math.PI)**2;
+    const open = Math.max(spread, flourish*(.88 - (index%2)*.16));
     const beat = phase * .83 + index * 1.86;
     const wave = reduceMotion() ? 0 : Math.sin(beat);
     const glide = reduceMotion() ? 0 : Math.cos(beat * .82 + index);
     // Separated pieces each have their own axis and phase. Docked pieces
     // share the camera movement so the complementary edges stay joined.
     const arc = Math.sin(Math.PI * open);
-    const twist = (tile.twist + .24 * wave) * open + arc * tile.twist * 2;
-    const tilt = (tile.tilt + .20 * glide) * open + arc * .21;
+    const direction = (chapter.index+index)%2===0 ? 1 : -1;
+    const twist = (tile.twist + .24 * wave) * open + arc * tile.twist * 2 + direction*flourish*.79;
+    const tilt = (tile.tilt + .20 * glide) * open + arc * .21 + flourish*.30;
     const cosTilt = Math.cos(tilt), sinTilt = Math.sin(tilt);
     const cosTwist = Math.cos(twist), sinTwist = Math.sin(twist);
-    const dx = tile.x + (tile.spread[0] + .10 * glide) * open;
-    const dz = tile.z + (tile.spread[1] + .10 * wave) * open;
-    const lift = (tile.spread[2] + .15 * wave) * open + .20 * arc;
+    // A quarter-turn around the assembly center sends pieces around one
+    // another; settling the beat restores their exact complementary edges.
+    const orbit = flourish * (chapter.index%2===0 ? .99 : -1.10);
+    const x = tile.x + (tile.spread[0] + .10 * glide) * open;
+    const z = tile.z + (tile.spread[1] + .10 * wave) * open;
+    const dx = x*Math.cos(orbit) - z*Math.sin(orbit);
+    const dz = z*Math.cos(orbit) + x*Math.sin(orbit);
+    const lift = (tile.spread[2] + .15 * wave) * open + .20 * arc + flourish*(.24+index*.065);
     function project(x, z, h) {
       const zTilt = z*cosTilt - h*sinTilt;
       const altitude = h*cosTilt + z*sinTilt + lift;
@@ -166,7 +175,7 @@
   const chapters=[...main.querySelectorAll('.story section')];
   const unit=clamp, ease=smooth, tau=Math.PI*2;
   const mix=(a,b,t)=>a+(b-a)*t;
-  let layout=[], hero=null, flight=null, distance=1, paused=false;
+  let layout=[], marks=[0,1], hero=null, flight=null, distance=1, paused=false;
   function measure() {
     const bounds=canvas.getBoundingClientRect();
     width=bounds.width; height=bounds.height; ratio=Math.min(2,devicePixelRatio||1);
@@ -187,8 +196,41 @@
       return {top:box.top+sy,bottom:box.bottom+sy,x:onLeft ? width-gap/2 : gap/2,free:gap};
     });
     distance=Math.max(1,document.documentElement.scrollHeight-window.innerHeight);
+    // Measured boundaries keep a beat aligned with each chapter after reflow.
+    marks=[0];
+    for(const row of layout){
+      const start=clamp((row.top-height*.46)/distance);
+      if(start>marks[marks.length-1]+.028 && start<.96) marks.push(start);
+    }
+    marks.push(1);
     target=unit(window.scrollY/distance);
     refresh();
+  }
+
+  function chapterAt(progress) {
+    let index=0;
+    while(index<marks.length-2 && progress>=marks[index+1]) index++;
+    const local=clamp((progress-marks[index])/(marks[index+1]-marks[index]));
+    const coordinate=index+smooth(local);
+    // An independent panorama in each chapter. Its endpoints meet as the
+    // reader crosses the boundary in either direction.
+    const angle=.85*Math.sin(coordinate*1.72)+.35*Math.sin(coordinate*3.14);
+    const strength=reduceMotion() || replay ? 0 : (1-smooth((progress-.80)/.17));
+    return {index,local,angle,strength};
+  }
+
+  function stillFrameAt(scrollY) {
+    // Reduced-motion readers see a fixed tableau in each chapter.
+    const center=flight ? flight.y-scrollY : height*.55;
+    if(width<=800){
+      if(flight && center>flight.h*.38) return {x:flight.x,y:center,size:Math.min(flight.w*.152,flight.h*.25,75),rail:0};
+      return {x:width-26,y:height*.46,size:11.8,rail:1};
+    }
+    const focus=scrollY+height*.46;
+    let current=null;
+    for(const row of layout){if(row.top>focus)break;current=row;}
+    return current ? {x:current.x,y:height*.47,size:Math.min(current.free*.18,height*.142,152),rail:0}
+      : {x:width*.76,y:height*.44,size:Math.min(width*.105,height*.166,190),rail:0};
   }
 
   function frameAt(scrollY) {
@@ -200,7 +242,7 @@
       const center=slot.y-scrollY;
       const slotUnit=Math.min(slot.w*.152,slot.h*.25,75);
       const lift=ease((height*.23+slot.h*.37-center)/(height*.23+slot.h*.37));
-      return {x:mix(slot.x,railX,lift),y:mix(center,railY,lift),size:mix(slotUnit,9.6,lift),rail:lift};
+      return {x:mix(slot.x,railX,lift),y:mix(center,railY,lift),size:mix(slotUnit,11.8,lift),rail:lift};
     }
 
     let anchorX=width*.76;
@@ -274,15 +316,16 @@
   function draw(progress) {
     if (!hero || width < 2 || height < 2) return;
     const animated = !reduceMotion();
-    const yaw = .78 + Math.sin(progress*2.1)*.47 + (animated ? Math.sin(phase*.44)*.13 + cursor.x*.14 : 0);
-    const pitch = .57 + progress*.075 + (animated ? Math.sin(phase*.53)*.035 + cursor.y*.06 : 0);
+    const chapter=chapterAt(progress);
+    const yaw = .78 + (animated ? chapter.angle + Math.sin(phase*.44)*.13 + cursor.x*.14 : .22*progress);
+    const pitch = .57 + progress*.075 + (animated ? Math.sin(phase*.53)*.035 + cursor.y*.06 + chapter.strength*.12*Math.sin(chapter.local*Math.PI) : 0);
     const camera = {sin:Math.sin(yaw), cos:Math.cos(yaw), pitch, lift:Math.sqrt(1-pitch*pitch)};
-    const scene = tiles.map((tile,index) => geometry(tile,progress,phase,camera,index)).sort((a,b) => a.depth-b.depth);
+    const scene = tiles.map((tile,index) => geometry(tile,progress,phase,camera,index,chapter)).sort((a,b) => a.depth-b.depth);
     const points = scene.flatMap(tile => tile.top.concat(tile.bottom));
     const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
     const left = Math.min(...xs), right = Math.max(...xs);
     const rear = Math.min(...ys), near = Math.max(...ys);
-    const stage=frameAt(window.scrollY);
+    const stage=animated ? frameAt(window.scrollY) : stillFrameAt(window.scrollY);
     // Autoframe the volumetric puzzle in the whitespace offered by each chapter.
     const footprint=stage.size*3.60;
     const scale=Math.min(footprint/(right-left),footprint*.83/(near-rear));
@@ -337,7 +380,11 @@
       cursor.x += (cursor.toX-cursor.x)*ease;
       cursor.y += (cursor.toY-cursor.y)*ease;
     }
-    draw(reduceMotion() ? 1 : shown);
+    // With reduced motion each chapter changes the assembly exactly once.
+    // A final explicit stop also covers short contact sections and rounded
+    // viewport scroll heights on mobile.
+    const milestone=target>=.97 ? 1 : chapterAt(target).index/(marks.length-1);
+    draw(reduceMotion() ? milestone : shown);
     if (!reduceMotion() && !paused) refresh();
   }
   function refresh() {
@@ -393,3 +440,4 @@
   document.fonts?.ready.then(measure);
   measure();
 })();
+
