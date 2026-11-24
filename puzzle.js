@@ -56,21 +56,32 @@
     tile.ring = ring;
   }
 
-  function geometry(tile, progress) {
+  function geometry(tile, progress, phase, camera, index) {
     const open = 1 - smooth((progress - tile.start) / (tile.end - tile.start));
-    const twist = tile.twist * open, tilt = tile.tilt * open;
-    const dx = tile.x + tile.spread[0]*open, dz = tile.z + tile.spread[1]*open;
+    const beat = phase * .83 + index * 1.86;
+    const wave = motion.matches ? 0 : Math.sin(beat);
+    const glide = motion.matches ? 0 : Math.cos(beat * .82 + index);
+    // Separated pieces each have their own axis and phase. Docked pieces
+    // share the camera movement so the complementary edges stay joined.
+    const arc = Math.sin(Math.PI * open);
+    const twist = (tile.twist + .24 * wave) * open + arc * tile.twist * 2;
+    const tilt = (tile.tilt + .20 * glide) * open + arc * .21;
+    const cosTilt = Math.cos(tilt), sinTilt = Math.sin(tilt);
+    const cosTwist = Math.cos(twist), sinTwist = Math.sin(twist);
+    const dx = tile.x + (tile.spread[0] + .10 * glide) * open;
+    const dz = tile.z + (tile.spread[1] + .10 * wave) * open;
+    const lift = (tile.spread[2] + .15 * wave) * open + .20 * arc;
     function project(x, z, h) {
-      const zTilt = z*Math.cos(tilt) - h*Math.sin(tilt);
-      const altitude = h*Math.cos(tilt) + z*Math.sin(tilt) + tile.spread[2]*open;
-      const xx = dx + x*Math.cos(twist) - zTilt*Math.sin(twist);
-      const zz = dz + zTilt*Math.cos(twist) + x*Math.sin(twist);
-      const depth = Math.SQRT1_2 * (xx + zz);
-      return [Math.SQRT1_2 * (xx - zz), depth*.56 - altitude*.83, depth];
+      const zTilt = z*cosTilt - h*sinTilt;
+      const altitude = h*cosTilt + z*sinTilt + lift;
+      const xx = dx + x*cosTwist - zTilt*sinTwist;
+      const zz = dz + zTilt*cosTwist + x*sinTwist;
+      const depth = camera.sin*xx + camera.cos*zz;
+      return [camera.cos*xx - camera.sin*zz, depth*camera.pitch - altitude*camera.lift, depth];
     }
     const top = tile.ring.map(([x,z]) => project(x,z,thickness));
     const bottom = tile.ring.map(([x,z]) => project(x,z,0));
-    return { tile, top, bottom, project, depth: project(0,0,0)[2] };
+    return { tile, index, top, bottom, project, depth: project(0,0,0)[2] };
   }
 
   function color(rgb, factor, white = 0) {
@@ -83,8 +94,8 @@
     ctx.closePath();
   }
 
-  function drawTile(mesh, scale) {
-    const { tile, top, bottom, project } = mesh;
+  function drawTile(mesh, scale, phase) {
+    const { tile, top, bottom, project, index } = mesh;
     const wallSegments = [];
     for (let i = 0; i < top.length; i++) {
       const j = (i+1) % top.length;
@@ -114,9 +125,26 @@
     ctx.fill();
     ctx.save();
     ctx.clip();
+    const pulse = pulses[index];
+    const age = phase - pulse;
+    const docking = age >= 0 && age < .85 ? (1-age/.85) ** 2 : 0;
+    if (!motion.matches) {
+      const shine = (phase - index*.23 + 8) % 8;
+      if (shine < 1.45 || docking > 0) {
+        const sweep = docking > 0 ? age/.85 : shine/1.45;
+        const center = project(0,0,thickness);
+        const x = center[0]-1.2 + sweep*2.4;
+        const band = ctx.createLinearGradient(x-.26,center[1]-.1,x+.26,center[1]+.1);
+        band.addColorStop(0,'rgba(255,255,255,0)');
+        band.addColorStop(.55,'rgba(232,226,255,'+ (.15 + .20*docking) +')');
+        band.addColorStop(1,'rgba(255,255,255,0)');
+        ctx.fillStyle = band;
+        ctx.fillRect(center[0]-1.5,center[1]-1.5,3,3);
+      }
+    }
     // Fine paired edges read as a bevel even on a narrow phone viewport.
-    ctx.strokeStyle = color(tile.color,.90,65);
-    ctx.lineWidth = .021;
+    ctx.strokeStyle = color(tile.color,.90,65+80*docking);
+    ctx.lineWidth = .021 + docking*.035;
     ctx.stroke();
     ctx.restore();
     polygon(top);
@@ -125,11 +153,45 @@
     ctx.stroke();
   }
 
+  const pulses = tiles.map(() => -10);
+  const cursor = { x: 0, y: 0, toX: 0, toY: 0 };
   let width = 0, height = 0, ratio = 1;
-  let target = 0, shown = 0, frame = 0, previous = 0;
+  let target = 0, shown = 0, frame = 0, previous = 0, phase = 0;
+  let onScreen = true, replay = null;
+
+  function drawDust(time, progress) {
+    const centerX = width*.5, centerY = height*.49;
+    const radius = Math.min(width, height*1.4);
+    for (let i = 0; i < 17; i++) {
+      const t = i*2.40 + time*(.12 + i%3*.037) + progress*.44;
+      const orbit = radius*(.31 + (i%5)*.037);
+      const x = centerX+Math.cos(t)*orbit;
+      const y = centerY+Math.sin(t)*orbit*.64 - Math.cos(t)*orbit*.24;
+      const alpha = .26+.18*Math.sin(t*1.35+i);
+      if (i%4===0) {
+        ctx.beginPath();
+        ctx.moveTo(x,y);
+        for (let j=1;j<=8;j++) {
+          const a = t-j*.017;
+          ctx.lineTo(centerX+Math.cos(a)*orbit,centerY+Math.sin(a)*orbit*.64-Math.cos(a)*orbit*.24);
+        }
+        ctx.strokeStyle = 'rgba(152,152,244,'+alpha*.6+')';
+        ctx.lineWidth = .9;
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(x,y,i%4===0 ? 1.6 : .95,0,Math.PI*2);
+      ctx.fillStyle = 'rgba(206,205,255,'+alpha+')';
+      ctx.fill();
+    }
+  }
   function draw(progress) {
     if (width < 2 || height < 2) return;
-    const scene = tiles.map(tile => geometry(tile, progress)).sort((a,b) => a.depth-b.depth);
+    const animated = !motion.matches;
+    const yaw = .78 + progress*.26 + (animated ? Math.sin(phase*.44)*.085 + cursor.x*.14 : 0);
+    const pitch = .57 + progress*.075 + (animated ? Math.sin(phase*.53)*.035 + cursor.y*.06 : 0);
+    const camera = {sin:Math.sin(yaw), cos:Math.cos(yaw), pitch, lift:Math.sqrt(1-pitch*pitch)};
+    const scene = tiles.map((tile,index) => geometry(tile,progress,phase,camera,index)).sort((a,b) => a.depth-b.depth);
     const points = scene.flatMap(tile => tile.top.concat(tile.bottom));
     const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
     const left = Math.min(...xs), right = Math.max(...xs);
@@ -137,7 +199,9 @@
     const scale = Math.min(width*.91/(right-left), height*.79/(near-rear), width*.30);
     ctx.setTransform(ratio,0,0,ratio,0,0);
     ctx.clearRect(0,0,width,height);
-    ctx.translate(width*.5-(left+right)*scale/2,height*.48-(rear+near)*scale/2);
+    if (animated) drawDust(phase,progress);
+    const bob = animated ? Math.sin(phase*.95)*scale*.029 : 0;
+    ctx.translate(width*.5-(left+right)*scale/2,height*.48+bob-(rear+near)*scale/2);
     ctx.scale(scale,scale);
     ctx.save();
     ctx.translate((left+right)/2, near+.14);
@@ -149,20 +213,43 @@
     ctx.fillStyle = glow;
     ctx.fillRect(-1.65,-1.65,3.3,3.3);
     ctx.restore();
-    for (const mesh of scene) drawTile(mesh,scale);
+    for (const mesh of scene) drawTile(mesh,scale,phase);
   }
 
+  function replayProgress(dt) {
+    replay.elapsed += dt;
+    const t = replay.elapsed;
+    if (t < .9) return replay.from*(1-smooth(t/.9));
+    if (t < 1.15) return 0;
+    if (t < 4.5) return smooth((t-1.15)/3.35);
+    if (t < 5.15) return 1;
+    if (t < 6.45) return 1 + (target-1)*smooth((t-5.15)/1.3);
+    replay = null;
+    return target;
+  }
   function tick(time) {
-    const dt = Math.min(64, time - (previous || time - 16));
+    frame = 0;
+    if (!onScreen || document.hidden) return;
+    const active = replay || Math.abs(target-shown)>.001 || Math.abs(cursor.toX-cursor.x)>.01 || Math.abs(cursor.toY-cursor.y)>.01;
+    const elapsed = time - (previous || time-40);
+    if (elapsed < (active ? 14 : 40) && !motion.matches) { refresh(); return; }
+    const dt = Math.min(80,elapsed);
     previous = time;
-    shown += (target-shown) * (1-Math.exp(-dt/64));
-    if (Math.abs(target-shown) < .0006) shown = target;
+    const before = shown;
+    if (!motion.matches) {
+      phase += dt/1000;
+      shown = replay ? replayProgress(dt/1000) : shown+(target-shown)*(1-Math.exp(-dt/64));
+      if (!replay && Math.abs(target-shown)<.0006) shown = target;
+      tiles.forEach((tile,i) => { if (before < tile.end && shown >= tile.end) pulses[i] = phase; });
+      const ease = 1-Math.exp(-dt/150);
+      cursor.x += (cursor.toX-cursor.x)*ease;
+      cursor.y += (cursor.toY-cursor.y)*ease;
+    }
     draw(motion.matches ? 1 : shown);
-    if (!motion.matches && shown !== target) frame = requestAnimationFrame(tick);
-    else { frame = 0; previous = 0; }
+    if (!motion.matches) refresh();
   }
   function refresh() {
-    if (!frame) frame = requestAnimationFrame(tick);
+    if (!frame && onScreen && !document.hidden) frame = requestAnimationFrame(tick);
   }
   function resize() {
     const box = canvas.getBoundingClientRect();
@@ -178,8 +265,41 @@
     target = clamp(event.detail);
     if (!motion.matches) refresh();
   });
-  motion.addEventListener('change', refresh);
+  window.addEventListener('cv-replay', () => {
+    if (motion.matches) return;
+    replay = { from: shown, elapsed: 0 };
+    refresh();
+  });
+  // Stage layout can make the canvas pointer-transparent. Sample the pointer
+  // from the page and normalize it only in the vicinity of the stage.
+  window.addEventListener('pointermove', event => {
+    if (!onScreen || motion.matches || event.pointerType === 'touch') return;
+    const rect = canvas.getBoundingClientRect();
+    const x = (event.clientX-rect.left)/rect.width * 2 - 1;
+    const y = (event.clientY-rect.top)/rect.height * 2 - 1;
+    const within = Math.abs(x)<1.35 && Math.abs(y)<1.35;
+    cursor.toX = within ? Math.max(-1,Math.min(1,x)) : 0;
+    cursor.toY = within ? Math.max(-1,Math.min(1,y)) : 0;
+  }, { passive:true });
+  document.addEventListener('pointerleave', () => { cursor.toX = cursor.toY = 0; });
+  function visibilityChanged() {
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0; previous = 0;
+    refresh();
+  }
+  document.addEventListener('visibilitychange', visibilityChanged);
+  motion.addEventListener('change', () => {
+    replay = null;
+    pulses.fill(-10);
+    visibilityChanged();
+  });
   window.addEventListener('resize', resize, { passive: true });
   if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+  if (window.IntersectionObserver) {
+    new IntersectionObserver(entries => {
+      onScreen = entries[0].isIntersecting;
+      visibilityChanged();
+    }).observe(canvas);
+  }
   resize();
 })();
