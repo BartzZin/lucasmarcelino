@@ -84,7 +84,6 @@
     chapters.forEach((chapter, index) => {
       const box = bounds[index];
       const arrival = clamp((viewport - box.top) / (viewport * .49));
-      chapter.style.setProperty('--arrive', motion ? arrival.toFixed(3) : 1);
       chapter.style.setProperty('--unread', motion ? (1 - arrival).toFixed(3) : 0);
     });
     window.dispatchEvent(new CustomEvent('cv-progress', {detail: progress}));
