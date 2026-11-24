@@ -47,6 +47,7 @@
   let target=0,position=0,clock=0,previous=0,frame=0,ready=false;
   let painted=null;
   let paintedScroll=-Infinity;
+  let lastScroll=-Infinity;
   let settled=null, transfer=null, arrival=-Infinity;
   let protectedRects=null, protectedScroll=-Infinity;
   const cursor={x:0,y:0,tx:0,ty:0};
@@ -101,9 +102,10 @@
     if(width<=800){
       const slot=flight||{x:width*.5,y:intro.offsetHeight+80,w:width,h:160};
       const cy=slot.y-sy;
-      const rail=smooth(sy/Math.max(60,slot.y-height*.32));
-      const railY=height*(.47+(gentle ? .055 : .23)*Math.sin(target*tau*2.25-.6));
-      const lift=rail===1 ? smooth((height*.32-cy)/(height*.22)) : 0;
+      const displayScroll=position*distance;
+      const rail=smooth(displayScroll/Math.max(60,slot.y-height*.32));
+      const railY=height*(.47+(gentle ? .055 : .23)*Math.sin(position*tau*2.25-.6));
+      const lift=smooth((height*.32-slot.y+displayScroll)/(height*.22));
       return {x:mix(slot.x,width-21,rail),y:mix(cy,railY,lift),w:mix(Math.min(slot.w*.70,slot.h*.73),32,rail),rail};
     }
     const readingHeight=Math.min(height,hero.h/.82);
@@ -123,7 +125,7 @@
     return {x:row.x,y:docY-sy,docY,w,rail:0,side:row.side,index};
   }
 
-  function travelingStage(destination,time){
+  function travelingStage(destination,time,dt){
     if(destination.side===undefined) return destination;
     settled??=destination;
     if(Math.abs(settled.index-destination.index)>1 ||
@@ -141,11 +143,14 @@
       transfer={start:time,from:settled,to:destination,lane,laneWidth};
     }
     if(!transfer){
-      const docY=mix(settled.docY,destination.docY,.22);
+      // A wheel step moves the document immediately. Ease the fixed canvas
+      // in viewport coordinates so that motion is not subtracted twice.
+      const easing=1-Math.exp(-dt*12);
+      const y=mix(settled.y,destination.y,easing);
       settled={...destination,
-        x:mix(settled.x,destination.x,.22),
-        w:mix(settled.w,destination.w,.22),
-        docY,y:docY-window.scrollY
+        x:mix(settled.x,destination.x,easing),
+        w:mix(settled.w,destination.w,easing),
+        docY:y+window.scrollY,y
       };
       return settled;
     }
@@ -219,24 +224,34 @@
     });
   }
 
-  function protectText(){
+  function* textIntersections(){
     if(!protectedRects || protectedScroll!==window.scrollY){
       protectedScroll=window.scrollY;
       protectedRects=textBlocks.map(node=>node.getBoundingClientRect())
         .filter(box=>box.width>0 && box.height>0 && box.bottom>-8 && box.top<height+8);
     }
-    // Intersect the existing clip with the area outside each content block.
-    // Separate clips also cover overlapping text and transformed project rows.
     for(const box of protectedRects){
       const inset=8;
       if(box.right+inset<=painted.x || box.left-inset>=painted.x+painted.w ||
         box.bottom+inset<=painted.y || box.top-inset>=painted.y+painted.h) continue;
+      yield [Math.floor(box.left-inset),Math.floor(box.top-inset),
+        Math.ceil(box.width+2*inset+1),Math.ceil(box.height+2*inset+1)];
+    }
+  }
+
+  function protectText(){
+    for(const rect of textIntersections()){
       ctx.beginPath();
       ctx.rect(-20,-20,width+40,height+40);
-      ctx.rect(Math.floor(box.left-inset),Math.floor(box.top-inset),
-        Math.ceil(box.width+2*inset+1),Math.ceil(box.height+2*inset+1));
+      ctx.rect(...rect);
       ctx.clip('evenodd');
     }
+  }
+
+  function protectExistingPaint(){
+    if(!painted) return;
+    ctx.setTransform(ratio,0,0,ratio,0,0);
+    for(const rect of textIntersections()) ctx.clearRect(...rect);
   }
 
   function wake(x,y,size,strength,direction,index){
@@ -286,12 +301,12 @@
     painted=null;
   }
 
-  function draw(){
+  function draw(dt){
     if(!ready||width<2||height<2)return;
     const gentle=preference.matches;
     const progress=position;
     const t=clock;
-    const chapter=chapterAt(progress), area=travelingStage(stage(gentle),t);
+    const chapter=chapterAt(progress), area=travelingStage(stage(gentle),t,dt);
     const formation=area.formation??0;
     const landed=t-arrival;
     const orbiting=(1-smooth(formation*4))*smooth(landed/.80);
@@ -375,7 +390,7 @@
     frame=0;if(document.hidden)return;
     const elapsed=now-(previous||now-41);
     const fast=Math.abs(position-target)>.001;
-    if(paintedScroll===window.scrollY && elapsed<(fast?14:21)){schedule();return;}
+    if(now-lastScroll>170 && !transfer && paintedScroll===window.scrollY && elapsed<(fast?14:21)){schedule();return;}
     const dt=Math.min(85,elapsed)/1000;
     previous=now;
     clock+=dt*(preference.matches ? .78 : 1);
@@ -383,16 +398,19 @@
     if(Math.abs(position-target)<.0004)position=target;
     const smoothPointer=1-Math.exp(-dt*7);
     cursor.x=mix(cursor.x,cursor.tx,smoothPointer);cursor.y=mix(cursor.y,cursor.ty,smoothPointer);
-    draw();
+    draw(dt);
     schedule();
   }
   window.addEventListener('cv-progress',e=>{
     protectedRects=null;
+    protectExistingPaint();
     if(Number.isFinite(e.detail)){target=unit(e.detail);schedule();}
   });
   window.addEventListener('scroll',()=>{
-    // Browser scrolling can expose a different text column between paints.
-    if(paintedScroll!==window.scrollY) clearPainting();
+    // Clear only the parts of the previous frame that the text has reached.
+    // Clearing the entire canvas here would blink before the next paint.
+    if(paintedScroll!==window.scrollY) protectExistingPaint();
+    lastScroll=performance.now();
     target=unit(scrollY/distance);
     schedule();
   },{passive:true});
