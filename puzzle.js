@@ -35,6 +35,8 @@
   }
   const queue = art.slice().sort((a,b)=>a.cx-b.cx);
   queue.forEach((piece,index)=>{piece.lane=index-1.5;});
+  const particleField=new Float32Array(art.length*3);
+  const particleEvent=new CustomEvent('cv-puzzle-field',{detail:particleField});
 
   const stars = [
     [-.52,-.26,4.1],[-.42,-.31,1.5],[-.35,-.43,2.4],[-.31,-.46,1.1],[-.17,-.53,1.5],
@@ -299,7 +301,11 @@
     const right=Math.min(width,Math.ceil(area.x+margin)), bottom=Math.min(height,Math.ceil(area.y+margin));
     clearPainting();
     paintedScroll=window.scrollY;
-    if(right<=x || bottom<=y) return;
+    if(right<=x || bottom<=y){
+      particleField.fill(0);
+      window.dispatchEvent(particleEvent);
+      return;
+    }
     ctx.setTransform(ratio,0,0,ratio,0,0);
     painted={x,y,w:right-x,h:bottom-y};
     ctx.save();
@@ -347,14 +353,20 @@
     if(formation>.01){
       poses.forEach((p,i)=>wake(p.x,p.y,area.w,formation,area.direction,i));
     }
-    for(const p of poses){
+    const world=ctx.getTransform();
+    poses.forEach((p,index)=>{
+      const offset=index*3;
+      particleField[offset]=(world.a*p.x+world.c*p.y+world.e)/ratio;
+      particleField[offset+1]=(world.b*p.x+world.d*p.y+world.f)/ratio;
+      particleField[offset+2]=Math.max(p.w,p.h)*.55;
       ctx.save();
       ctx.translate(p.x,p.y);
       ctx.rotate(p.turn);
       ctx.drawImage(p.image,-p.w/2,-p.h/2,p.w,p.h);
       ctx.restore();
-    }
+    });
     ctx.restore();
+    window.dispatchEvent(particleEvent);
   }
   function schedule(){
     if(!document.hidden && !frame && ready)frame=requestAnimationFrame(tick);

@@ -19,6 +19,16 @@ body {
   background-size: auto,22px 22px;
 }
 #puzzle { position: fixed; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; z-index: 0; }
+#particles { display: none; }
+@media screen {
+  html.particles-ready body {
+    background-image: radial-gradient(ellipse at 80% 0%, #341744 0, transparent 80vh);
+  }
+  .particles-ready #particles {
+    display: block; position: fixed; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 0;
+  }
+}
 #cursor-glow { display: none; }
 @media screen and (any-hover:hover) and (any-pointer:fine) {
   #cursor-glow {
