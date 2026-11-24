@@ -7,6 +7,7 @@
   if (!ctx || !main) return;
   const intro = main.querySelector('.intro');
   const chapters = [...main.querySelectorAll('.story section')];
+  const textBlocks = [...main.querySelectorAll('.story h2, .piece h3, .piece p, .piece small, .archive time, .section-note, .whatsapp, .phone, .links')];
   const preference = matchMedia('(prefers-reduced-motion: reduce)');
   const tau = Math.PI * 2;
   const unit = v => Math.max(0, Math.min(1, v));
@@ -116,7 +117,8 @@
     if(destination.rail>0 || destination.side===undefined) return destination;
     settled??=destination;
     if(!transfer && settled.side!==destination.side){
-      transfer={start:time,from:settled,to:destination};
+      const y=flightLane(settled,destination);
+      transfer={start:time,from:settled,to:destination,y,lane:y,lastScroll:scrollY,lastCheck:time};
     }
     if(!transfer){
       settled=destination;
@@ -126,6 +128,13 @@
     const phase=unit((time-start)/1.22);
     const travel=smooth((phase-.18)/.64);
     const formation=smooth(phase/.26)*(1-smooth((phase-.73)/.27));
+    if(time-transfer.lastCheck>.12 && Math.abs(scrollY-transfer.lastScroll)>24){
+      transfer.lane=flightLane(from,to);
+      transfer.lastScroll=scrollY;
+      transfer.lastCheck=time;
+    }
+    transfer.y=mix(transfer.y,transfer.lane,.13);
+    const laneY=transfer.y;
     if(phase===1){
       settled=to;
       transfer=null;
@@ -134,7 +143,7 @@
     const landing=destination.side===to.side ? destination : to;
     return {
       x:mix(from.x,landing.x,travel),
-      y:mix(from.y,landing.y,travel)-Math.min(110,height*.13)*formation,
+      y:mix(mix(from.y,landing.y,travel),laneY,formation),
       w:mix(from.w,landing.w,travel),
       rail:0,
       formation,
@@ -187,6 +196,30 @@
       const drift=.045*Math.sin(t*.7+i);
       star((x+drift)*w,(y-drift*.62)*w,radius,i%4===0?'170,243,207':'215,170,255',twinkle);
     });
+  }
+
+  function flightLane(from,to){
+    const radius=Math.min(68,Math.max(from.w,to.w)*.15);
+    const x0=Math.min(from.x,to.x)-radius;
+    const x1=Math.max(from.x,to.x)+radius;
+    const preferred=(from.y+to.y)/2-Math.min(110,height*.13);
+    const intervals=textBlocks.map(node=>node.getBoundingClientRect())
+      .filter(box=>box.right>x0 && box.left<x1 && box.bottom>0 && box.top<height)
+      .sort((a,b)=>a.top-b.top);
+    const bottom=height-radius-8;
+    let start=radius+8, winner=preferred, cost=Infinity;
+    function consider(end){
+      if(end<start) return;
+      const candidate=Math.max(start,Math.min(end,preferred));
+      const distance=Math.abs(candidate-preferred);
+      if(distance<cost){winner=candidate;cost=distance;}
+    }
+    for(const box of intervals){
+      consider(Math.min(bottom,box.top-radius));
+      start=Math.max(start,box.bottom+radius);
+    }
+    consider(bottom);
+    return winner;
   }
 
   function wake(x,y,size,strength,direction,index){
