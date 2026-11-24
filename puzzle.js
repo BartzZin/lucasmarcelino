@@ -38,14 +38,16 @@
   ];
   let width=0,height=0,ratio=1,layout=[],marks=[0,1],flight=null,hero=null,distance=1;
   let target=0,position=0,clock=0,previous=0,frame=0,ready=false;
+  let painted=null;
   const cursor={x:0,y:0,tx:0,ty:0};
 
   function measure(){
     const bounds=canvas.getBoundingClientRect();
     width=bounds.width;height=bounds.height;ratio=Math.min(2,devicePixelRatio||1);
     if (!width || !height) return;
+    ratio=Math.min(ratio,Math.sqrt(7_000_000/(width*height)));
     const pw=Math.round(width*ratio), ph=Math.round(height*ratio);
-    if(canvas.width!==pw || canvas.height!==ph){canvas.width=pw;canvas.height=ph;}
+    if(canvas.width!==pw || canvas.height!==ph){canvas.width=pw;canvas.height=ph;painted=null;}
     const sy=window.scrollY;
     const contentBox=main.getBoundingClientRect();
     const introBox=intro.getBoundingClientRect();
@@ -87,7 +89,8 @@
     const readingHeight=Math.min(height,hero.h/.82);
     const focus=sy+readingHeight*.46;
     let x=hero.x,y=Math.max(readingHeight*.24,hero.top-sy+Math.min(hero.h,readingHeight)*.49);
-    let w=Math.min(hero.free*.77,hero.h*.72,readingHeight*.66);
+    let w=Math.min(hero.free*.78,hero.h*.72,readingHeight*.66);
+    let opacity=1;
     for(const row of layout){
       const blend=smooth((focus-row.top+readingHeight*.19)/(readingHeight*.38));
       if(!blend) break;
@@ -96,8 +99,9 @@
       x=mix(x,row.x,blend);
       y=mix(y,readingHeight*(.46+(gentle ? .026 : .085)*Math.sin(local*tau-.32)),blend)-readingHeight*(gentle ? .06 : .16)*crossing;
       w=mix(w,Math.min(row.free*.69,readingHeight*.54),blend)*(1-.48*crossing);
+      opacity*=1-.56*crossing;
     }
-    return {x,y,w,rail:0};
+    return {x,y,w,rail:0,opacity};
   }
   function star(x,y,r,color,glow){
     const halo=ctx.createRadialGradient(x,y,0,x,y,r*4);
@@ -112,35 +116,38 @@
     ctx.quadraticCurveTo(x-r*.13,y-r*.13,x,y-r);
     ctx.fillStyle='rgba(252,248,255,'+glow+')';ctx.fill();
   }
-  function atmosphere(w,t,progress){
-    // The colored arcs cross behind the sculpture. Only their outer limbs and
-    // moving terminals peek out, as in the supplied reference.
+  function atmosphere(w,t,progress,energy){
     for(let lane=0;lane<2;lane++){
       const rgb=lane?'173,255,207':'217,161,255';
       const rx=w*(lane ? .643 : .644), ry=w*(lane ? .188 : .218);
-      const tilt=lane ? .15 : -.40;
+      const tilt=(lane ? .15 : -.40)+Math.sin(t*.74+lane)*.09;
       const cy=w*(lane?.131:-.100);
-      const head=(lane?-.54:3.05)+(lane?-.19:.21)*t+progress*.66;
+      const head=(lane?-.54:3.05)+(lane?-.84:1.04)*t+progress*2.1;
       ctx.save();ctx.translate(0,cy);ctx.rotate(tilt);
       ctx.lineCap='round';
       // Fade the orbit toward the tail and concentrate light at its comet.
-      for(let i=0;i<30;i++){
-        const a=head-tau+(i/30)*tau, b=a+tau/30+.004;
-        const light=.20+.46*(i/30)**2;
+      for(let i=0;i<22;i++){
+        const a=head-tau+(i/22)*tau, b=a+tau/22+.004;
+        const light=.15+.60*(i/22)**2;
         ctx.strokeStyle='rgba('+rgb+','+light+')';ctx.lineWidth=Math.max(.72,w*.0017);
         ctx.beginPath();ctx.ellipse(0,0,rx,ry,0,a,b);ctx.stroke();
       }
-      ctx.shadowColor='rgb('+rgb+')';ctx.shadowBlur=Math.max(3,w*.012);
-      ctx.strokeStyle='rgba('+rgb+',.85)';ctx.lineWidth=Math.max(1,w*.0028);
-      ctx.beginPath();ctx.ellipse(0,0,rx,ry,0,head-.27,head);ctx.stroke();
-      ctx.shadowBlur=0;
-      star(Math.cos(head)*rx, Math.sin(head)*ry, Math.max(2.2,w*.008), rgb,.94);
+      const tail=.50+energy*.24;
+      ctx.beginPath();ctx.ellipse(0,0,rx,ry,0,head-tail,head);
+      ctx.strokeStyle='rgba('+rgb+',.10)';ctx.lineWidth=Math.max(4,w*.011);ctx.stroke();
+      ctx.strokeStyle='rgba('+rgb+',.28)';ctx.lineWidth=Math.max(2.4,w*.0055);ctx.stroke();
+      ctx.strokeStyle='rgba('+rgb+',.94)';ctx.lineWidth=Math.max(1.2,w*.0025);ctx.stroke();
+      for(let i=0;i<4;i++){
+        const a=head-.14*i, shimmer=1-i*.2;
+        star(Math.cos(a)*rx,Math.sin(a)*ry,Math.max(1.1,w*.009)*shimmer,rgb,.92*shimmer);
+      }
       ctx.restore();
     }
     stars.forEach(([x,y,r],i)=>{
-      const twinkle=.62+.32*Math.sin(t*(.77+(i%3)*.3)+i*1.8);
+      const twinkle=.55+.38*Math.sin(t*(1.17+(i%3)*.37)+i*1.8);
       const radius=Math.max(.9,w/370*r)*(.78+twinkle*.29);
-      star(x*w,y*w,radius,i%4===0?'170,243,207':'215,170,255',twinkle);
+      const drift=.045*Math.sin(t*.7+i);
+      star((x+drift)*w,(y-drift*.62)*w,radius,i%4===0?'170,243,207':'215,170,255',twinkle);
     });
   }
 
@@ -150,33 +157,39 @@
     const progress=position;
     const chapter=chapterAt(progress), area=stage(gentle);
     const t=clock;
-    const ending=1-smooth((progress-.85)/.14);
-    ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,width,height);
+    const energy=Math.sin(chapter.local*Math.PI)**2;
+    const margin=Math.ceil(area.w*1.01+12);
+    const x=Math.max(0,Math.floor(area.x-margin)), y=Math.max(0,Math.floor(area.y-margin));
+    ctx.setTransform(ratio,0,0,ratio,0,0);
+    if(painted)ctx.clearRect(painted.x,painted.y,painted.w,painted.h);
+    painted={x,y,w:Math.min(width,Math.ceil(area.x+margin))-x,h:Math.min(height,Math.ceil(area.y+margin))-y};
     ctx.save();
-    const drift=gentle ? .15 : 1;
-    ctx.translate(area.x+Math.sin(t*.48)*area.w*.004*drift,area.y+Math.sin(t*.65)*area.w*.006*drift);
-    if(area.rail<.72)atmosphere(area.w,t,progress);
+    ctx.beginPath();ctx.rect(painted.x,painted.y,painted.w,painted.h);ctx.clip();
+    ctx.globalAlpha=area.opacity??1;
+    const drift=gentle ? .62 : 1;
+    ctx.translate(area.x+Math.sin(t*.74)*area.w*.015*drift,area.y+Math.sin(t*.87)*area.w*.025*drift);
+    if(area.rail<.72)atmosphere(area.w,t,progress,energy);
     const pointerTurn=gentle ? 0 : cursor.x*.035+cursor.y*.012;
-    const groupTurn=(.041*Math.sin(t*.68)*drift+pointerTurn)*Math.sin(progress*Math.PI)+.061*Math.sin(progress*tau)*drift;
+    const groupTurn=(.09*Math.sin(t*.84)*drift+pointerTurn)*Math.sin(progress*Math.PI)+.13*Math.sin(progress*tau)*drift;
     ctx.rotate(groupTurn);
     // Each layer travels out from its own center. A fresh chapter starts with
     // the original alignment, opens, and then brings the four cuts together.
     art.forEach((p,i)=>{
       const beat=unit((chapter.local-i*.037)/(.87-i*.037));
-      const open=Math.sin(beat*Math.PI)**2*ending*(gentle ? .35 : 1);
+      const open=Math.sin(beat*Math.PI)**2*(gentle ? .68 : 1);
       // The pieces remain separate, including at either end of the journey.
       // Each follows its own breathing cycle even when reading has stopped.
-      const breath=(.5-.5*Math.cos(t*(.83+i*.056)+i*.70));
-      const spread=.115+(gentle ? .095 : .24)*breath+.68*open;
-      const idle=Math.sin(t*.93+i*1.71)*(.006+.009*open)*(gentle ? .28 : 1);
-      const ox=p.cx*(1+spread)+Math.cos(i*1.85+t*.43)*.022*open;
+      const breath=(.5-.5*Math.cos(t*(1.38+i*.094)+i*.64));
+      const spread=.12+(.33*breath+1.03*open)*drift;
+      const idle=Math.sin(t*1.47+i*1.71)*(.016+.032*open)*drift;
+      const ox=p.cx*(1+spread)+Math.cos(i*1.85+t*.74)*.044*open;
       // The upper socket releases vertically before the left tab turns.
       const oy=p.cy*(1+spread)+idle-(i===0 ? .050 : 0);
-      const turn=p.turn*(.08+.29*breath+open*(1+.26*Math.sin(chapter.index+i)))*(gentle ? .34 : 1);
-      const fit=1-.25*open;
+      const turn=p.turn*(.08+.74*breath+open*(2.1+.34*Math.sin(chapter.index+i)))*drift;
+      const fit=1-.31*open;
       // Insets keep the glossy tabs clear of neighbouring sockets even when
       // the independently rotating silhouettes cross in projection.
-      const inset=.92-.075*open;
+      const inset=.92-.09*open;
       const dw=p.width*area.w*fit*inset,dh=p.height*area.w*fit*inset;
       ctx.save();
       ctx.translate(area.w*ox*fit,area.w*oy*fit);
@@ -193,11 +206,11 @@
     frame=0;if(document.hidden)return;
     const elapsed=now-(previous||now-41);
     const fast=Math.abs(position-target)>.001;
-    if(elapsed<(fast?14:39)){schedule();return;}
+    if(elapsed<(fast?14:21)){schedule();return;}
     const dt=Math.min(85,elapsed)/1000;
     previous=now;
-    clock+=dt*(preference.matches ? .49 : 1);
-    position+=(target-position)*(1-Math.exp(-dt*16));
+    clock+=dt*(preference.matches ? .78 : 1);
+    position+=(target-position)*(1-Math.exp(-dt*9));
     if(Math.abs(position-target)<.0004)position=target;
     const smoothPointer=1-Math.exp(-dt*7);
     cursor.x=mix(cursor.x,cursor.tx,smoothPointer);cursor.y=mix(cursor.y,cursor.ty,smoothPointer);
