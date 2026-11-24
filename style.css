@@ -63,7 +63,7 @@ footer span{margin-right:auto}button{font:inherit;background:none;border:0;paddi
   h1 em{color:var(--accent);font-weight:900;line-height:.94}
   .intro p{margin:20px 0 12px;max-width:31ch}
   .model{height:min(41vw,76svh);display:flex;flex-direction:column;isolation:isolate;top:5vh}
-  .space{position:relative;flex:1;min-height:0}
+  .space{position:relative;flex:1;min-height:0;overflow:clip}
   .space:before{content:"";position:absolute;inset:45% -2% 0;z-index:-1;background-image:linear-gradient(#b674e132 1px,transparent 1px),linear-gradient(90deg,#b674e132 1px,transparent 1px);background-size:34px 34px;transform:perspective(180px) rotateX(49deg);mask-image:radial-gradient(ellipse,#000 10%,transparent 70%)}
   .space:after{content:"";position:absolute;z-index:-2;inset:5% 0;background:radial-gradient(ellipse,#78448c45,transparent 69%)}
   .console{pointer-events:auto;display:flex;justify-content:center;align-items:center;gap:16px;font:500 clamp(11px,.87vw,15px)/1.25 ui-monospace,Consolas,monospace;color:#d1c1d5;min-height:32px}
@@ -84,7 +84,7 @@ footer span{margin-right:auto}button{font:inherit;background:none;border:0;paddi
   @keyframes arrive{from{opacity:.02;transform:translate3d(-.13em,.18em,0) rotate(-4deg)}to{opacity:1;transform:none}}
   @media(prefers-reduced-motion:no-preference){h1 span,h1 em{animation:arrive .8s cubic-bezier(.16,1,.33,1) backwards;transform-origin:left center}h1 span:nth-child(2){animation-delay:.12s}h1 em{animation-delay:.22s}}
   @media(max-width:720px){
-    .intro{padding:32px 0 8px}h1{font-size:clamp(70px,15.5vw,106px)}
+    .intro{padding:32px 0 8px}h1{font-size:clamp(50px,17.5vw,106px)}
     .model{top:0;height:clamp(160px,29svh,265px);padding-bottom:4px;background:linear-gradient(var(--bg) 0%,#170c23fa 94%,transparent)}
     .console{gap:12px;min-height:26px;font-size:10px}.console button{padding:4px 10px}
     .story section{scroll-margin-top:clamp(160px,29svh,265px);padding:44px 0}
