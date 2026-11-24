@@ -7,6 +7,8 @@
   if (!ctx) return;
 
   const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  let optedIn = false;
+  const reduceMotion = () => motion.matches && !optedIn;
   const clamp = n => Math.max(0, Math.min(1, n));
   const smooth = n => clamp(n) ** 2 * (3 - 2 * clamp(n));
   const thickness = 0.26;
@@ -59,8 +61,8 @@
   function geometry(tile, progress, phase, camera, index) {
     const open = 1 - smooth((progress - tile.start) / (tile.end - tile.start));
     const beat = phase * .83 + index * 1.86;
-    const wave = motion.matches ? 0 : Math.sin(beat);
-    const glide = motion.matches ? 0 : Math.cos(beat * .82 + index);
+    const wave = reduceMotion() ? 0 : Math.sin(beat);
+    const glide = reduceMotion() ? 0 : Math.cos(beat * .82 + index);
     // Separated pieces each have their own axis and phase. Docked pieces
     // share the camera movement so the complementary edges stay joined.
     const arc = Math.sin(Math.PI * open);
@@ -128,7 +130,7 @@
     const pulse = pulses[index];
     const age = phase - pulse;
     const docking = age >= 0 && age < .85 ? (1-age/.85) ** 2 : 0;
-    if (!motion.matches) {
+    if (!reduceMotion()) {
       const shine = (phase - index*.23 + 8) % 8;
       if (shine < 1.45 || docking > 0) {
         const sweep = docking > 0 ? age/.85 : shine/1.45;
@@ -271,7 +273,7 @@
   }
   function draw(progress) {
     if (!hero || width < 2 || height < 2) return;
-    const animated = !motion.matches;
+    const animated = !reduceMotion();
     const yaw = .78 + Math.sin(progress*2.1)*.47 + (animated ? Math.sin(phase*.44)*.13 + cursor.x*.14 : 0);
     const pitch = .57 + progress*.075 + (animated ? Math.sin(phase*.53)*.035 + cursor.y*.06 : 0);
     const camera = {sin:Math.sin(yaw), cos:Math.cos(yaw), pitch, lift:Math.sqrt(1-pitch*pitch)};
@@ -322,11 +324,11 @@
     if (!onScreen || document.hidden) return;
     const active = replay || Math.abs(target-shown)>.001 || Math.abs(cursor.toX-cursor.x)>.01 || Math.abs(cursor.toY-cursor.y)>.01;
     const elapsed = time - (previous || time-40);
-    if (elapsed < (active ? 14 : 40) && !motion.matches && !paused) { refresh(); return; }
+    if (elapsed < (active ? 14 : 40) && !reduceMotion() && !paused) { refresh(); return; }
     const dt = Math.min(80,elapsed);
     previous = time;
     const before = shown;
-    if (!motion.matches && !paused) {
+    if (!reduceMotion() && !paused) {
       phase += dt/1000;
       shown = replay ? replayProgress(dt/1000) : shown+(target-shown)*(1-Math.exp(-dt/64));
       if (!replay && Math.abs(target-shown)<.0006) shown = target;
@@ -335,8 +337,8 @@
       cursor.x += (cursor.toX-cursor.x)*ease;
       cursor.y += (cursor.toY-cursor.y)*ease;
     }
-    draw(motion.matches ? 1 : shown);
-    if (!motion.matches && !paused) refresh();
+    draw(reduceMotion() ? 1 : shown);
+    if (!reduceMotion() && !paused) refresh();
   }
   function refresh() {
     if (!frame && onScreen && !document.hidden) frame = requestAnimationFrame(tick);
@@ -350,15 +352,16 @@
     if(Number.isFinite(e.detail)){target=clamp(e.detail);refresh();}
   });
   window.addEventListener('cv-pause', e=>{paused=e.detail===true;previous=0;refresh();});
+  window.addEventListener('cv-enable', () => { optedIn = true; previous = 0; refresh(); });
   window.addEventListener('cv-replay', () => {
-    if (motion.matches) return;
+    if (reduceMotion()) return;
     paused=false; previous=0; replay = { from: shown, elapsed: 0 };
     refresh();
   });
   // Stage layout can make the canvas pointer-transparent. Sample the pointer
   // from the page and normalize it only in the vicinity of the stage.
   window.addEventListener('pointermove', event => {
-    if (!onScreen || motion.matches || event.pointerType === 'touch') return;
+    if (!onScreen || reduceMotion() || event.pointerType === 'touch') return;
     const rect = canvas.getBoundingClientRect();
     const x = (event.clientX-rect.left)/rect.width * 2 - 1;
     const y = (event.clientY-rect.top)/rect.height * 2 - 1;
@@ -374,6 +377,7 @@
   }
   document.addEventListener('visibilitychange', visibilityChanged);
   motion.addEventListener('change', () => {
+    optedIn = false;
     replay = null;
     pulses.fill(-10);
     visibilityChanged();

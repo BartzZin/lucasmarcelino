@@ -4,6 +4,7 @@
   const clamp = n => Math.max(0, Math.min(1, n));
   let pending = false;
   let paused = false;
+  let optedIn = false;
 
   function render() {
     pending = false;
@@ -34,8 +35,10 @@
   const replay = document.querySelector('#replay');
   const pause = document.querySelector('#pause');
   const setReplayVisibility = () => {
-    replay.hidden = reducedMotion.matches;
-    pause.hidden = reducedMotion.matches;
+    const needsActivation = reducedMotion.matches && !optedIn;
+    replay.hidden = false;
+    replay.textContent = needsActivation ? '▷ Ativar animação' : '▷ Reproduzir montagem';
+    pause.hidden = needsActivation;
     replay.disabled = paused;
   };
   pause.addEventListener('click', () => {
@@ -49,8 +52,21 @@
     schedule();
   });
   setReplayVisibility();
-  reducedMotion.addEventListener('change', setReplayVisibility);
+  reducedMotion.addEventListener('change', () => {
+    optedIn = false;
+    paused = false;
+    pause.textContent = 'Ⅱ';
+    pause.title = 'Pausar animação';
+    pause.setAttribute('aria-label', pause.title);
+    window.dispatchEvent(new CustomEvent('cv-pause', {detail:false}));
+    setReplayVisibility();
+  });
   replay.addEventListener('click', () => {
+    if (reducedMotion.matches && !optedIn) {
+      optedIn = true;
+      window.dispatchEvent(new Event('cv-enable'));
+      setReplayVisibility();
+    }
     window.dispatchEvent(new Event('cv-replay'));
   });
   printButton.hidden = false;
