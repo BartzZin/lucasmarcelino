@@ -72,7 +72,7 @@ h1 em { color: var(--accent); line-height: .95; }
 h2 { font-size: clamp(42px,4.6vw,85px); font-weight: 780; line-height: 1; letter-spacing: -.06em; margin-bottom: .65em; }
 h2 i { display: block; font: 600 clamp(16px,1.65vw,25px)/1.5 ui-monospace,Consolas,monospace; color: var(--accent); letter-spacing: -.06em; }
 h2 i:after { content: ' /'; }
-.piece { padding: clamp(23px,2.5vw,43px) 0; border-top: 1px solid #59445f; transform-origin: 35% 25%; }
+.piece { padding: clamp(23px,2.5vw,43px) 0; border-top: 1px solid #59445f; }
 small,time { color: #d5ace8; font-size: .85rem; }
 small { display: block; margin-bottom: 7px; font-weight: 580; }
 h3 { font-size: clamp(23px,2vw,36px); line-height: 1.12; font-weight: 680; letter-spacing: -.04em; }
@@ -86,11 +86,6 @@ time { font-family: ui-monospace,Consolas,monospace; margin-top: .36em; }
 .links { color: var(--accent); gap: 22px; }
 footer { border-top: 1px solid var(--line); padding: 23px 0; gap: 22px; color: var(--soft); font-size: .9rem; }
 footer span { margin-right: auto; }
-@keyframes arrive { from { opacity: .02; transform: translate(-.13em,.18em) rotate(-4deg); } to { opacity: 1; transform: none; } }
-@media(prefers-reduced-motion:no-preference) {
-  h1 span, h1 em { animation: arrive .8s cubic-bezier(.16,1,.33,1) backwards; transform-origin: left center; }
-  h1 span:nth-child(2) { animation-delay: .12s; } h1 em { animation-delay: .22s; }
-}
 @media(max-width:800px) {
   .identity span { display: none; }.bar { padding: 16px 0; } nav { gap: 13px; font-size: 14px; }
   .intro { width: 100%; min-height: auto; padding: 37px 0 0; }
@@ -110,28 +105,31 @@ footer span { margin-right: auto; }
     inset: 0 0 auto; height: 3px; transform-origin: left;
     transform: scaleX(var(--read,0)); background: linear-gradient(90deg,var(--violet),var(--accent));
   }
-  .intro h1 { transform: translateY(calc(36px * var(--hero-exit,0))); }
   .story section::before {
     content: ""; position: absolute; top: -1px; left: 0; width: 100%; height: 2px;
     background: linear-gradient(90deg,var(--line),var(--accent)); transform-origin: left;
     transform: scaleX(var(--arrive,1));
   }
   .story section:nth-child(even)::before { transform-origin: right; }
-  .chapter-inner h2 {
-    position: relative;
-    transform: translateY(calc(45px * var(--unread,0)));
-  }
+  .chapter-inner h2 { position: relative; }
   .chapter-inner h2::after {
     content: ""; position: absolute; inset: auto auto -.23em 0;
     width: 1.45em; height: 2px; background: linear-gradient(90deg,var(--accent),transparent);
     transform-origin: left; transform: scaleX(calc(1 - var(--unread,0)));
   }
   .story section:nth-child(even) h2::after { transform-origin: right; }
-  .chapter-inner h2 i { transform: translateX(calc(18px * var(--unread,0))); }
-  .piece {
-    --offset: 0; --side: 1;
-    transform: perspective(850px) translate3d(calc(clamp(10px,3vw,42px) * var(--offset) * var(--side)),calc(52px * var(--offset)),0) rotateX(calc(13deg * var(--offset)));
-    opacity: calc(1 - .24 * var(--offset));
+  [data-scroll-text] {
+    transform: translateY(var(--text-shift,0px));
+    opacity: var(--text-opacity,1);
+    clip-path: inset(
+      max(0px,calc(-1 * var(--text-shift,0px))) -16px
+      max(0px,var(--text-shift,0px)) -16px
+    );
+  }
+  [data-scroll-text]:focus-within {
+    transform: none;
+    opacity: 1;
+    clip-path: none;
   }
   .archive { position: relative; }
   .archive::before, .archive::after {
@@ -172,6 +170,7 @@ footer span { margin-right: auto; }
 @media(prefers-reduced-motion:reduce) {
   html { scroll-behavior: auto; }
   #cursor-glow { transition: none; }
+  [data-scroll-text] { transform: none; opacity: 1; clip-path: none; }
   .archive time::before, .piece h3 a span { transition: none; }
   .whatsapp:is(:hover,:focus-visible)::before { animation: none; }
 }
