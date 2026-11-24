@@ -1,443 +1,241 @@
 (() => {
   'use strict';
 
-  const canvas = document.getElementById('puzzle');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  const canvas = document.querySelector('#puzzle');
+  const ctx = canvas?.getContext('2d');
+  const main = document.querySelector('#principal');
+  if (!ctx || !main) return;
+  const intro = main.querySelector('.intro');
+  const chapters = [...main.querySelectorAll('.story section')];
+  const preference = matchMedia('(prefers-reduced-motion: reduce)');
+  const tau = Math.PI * 2;
+  const unit = v => Math.max(0, Math.min(1, v));
+  const smooth = v => { const t=unit(v); return t*t*(3-2*t); };
+  const mix = (a,b,t) => a+(b-a)*t;
+  const artBase = new URL('./arte/', document.currentScript?.src || document.baseURI);
 
-  const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
-  let optedIn = false;
-  const reduceMotion = () => motion.matches && !optedIn;
-  const clamp = n => Math.max(0, Math.min(1, n));
-  const smooth = n => clamp(n) ** 2 * (3 - 2 * clamp(n));
-  const thickness = 0.26;
-  const tiles = [
-    // Edges run clockwise from the top. Adjacent tabs have opposing signs.
-    { x: -.5, z: -.5, edge: [0, 1, -1, 0], spread: [-.40, -.25, .62], twist: -.19, tilt: .13, start: .02, end: .53, color: [194, 155, 238] },
-    { x:  .5, z: -.5, edge: [0, 0, 1, -1], spread: [.48, -.32, .26], twist: .19, tilt: -.19, start: .20, end: .70, color: [98, 75, 223] },
-    { x: -.5, z:  .5, edge: [1, 1, 0, 0], spread: [-.45, .42, .19], twist: -.23, tilt: -.12, start: .39, end: .85, color: [125, 144, 246] },
-    { x:  .5, z:  .5, edge: [-1, 0, 0, -1], spread: [.40, .45, .42], twist: .14, tilt: .20, start: .57, end: .98, color: [85, 66, 169] }
+  // Pixel positions in the shared studio render, including the transparent
+  // padding of each crop. At rest the four layers reproduce that photograph.
+  const art = [
+    {file:'topo.webp',x:291,y:128,w:555,h:429,turn:-.16},
+    {file:'esquerda.webp',x:92,y:381,w:525,h:587,turn:.16},
+    {file:'direita.webp',x:629,y:321,w:547,h:475,turn:.15},
+    {file:'frente.webp',x:395,y:614,w:596,h:529,turn:-.13}
   ];
-
-  // The normalized seam is symmetric about t=.5, so it fits when reversed.
-  const seam = [[0, 0], [.31, 0]];
-  function curve(points, start, a, b, end, steps) {
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const s = 1 - t;
-      points.push([0, 1].map(k => s*s*s*start[k] + 3*s*s*t*a[k] + 3*s*t*t*b[k] + t*t*t*end[k]));
-    }
-  }
-  curve(seam, [.31, 0], [.41, 0], [.48, -.035], [.43, .058], 7);
-  curve(seam, [.43, .058], [.34, .195], [.404, .258], [.5, .258], 10);
-  curve(seam, [.5, .258], [.596, .258], [.66, .195], [.57, .058], 10);
-  curve(seam, [.57, .058], [.52, -.035], [.59, 0], [.69, 0], 7);
-  seam.push([1, 0]);
-
-  const corners = [[-.5,-.5], [.5,-.5], [.5,.5], [-.5,.5]];
-  for (const tile of tiles) {
-    const ring = [];
-    for (let i = 0; i < 4; i++) {
-      const a = corners[i], b = corners[(i+1)%4], c = corners[(i+2)%4];
-      const dx = b[0] - a[0], dz = b[1] - a[1];
-      // Only the four external corners of the assembled square are rounded.
-      const cut = tile.edge[i] === 0 && tile.edge[(i+1)%4] === 0 ? .075 : 0;
-      if (tile.edge[i]) {
-        for (const [t, bump] of seam.slice(1,-1)) {
-          ring.push([a[0] + t*dx + bump*dz*tile.edge[i], a[1] + t*dz - bump*dx*tile.edge[i]]);
-        }
-      }
-      const from = [b[0]-cut*dx, b[1]-cut*dz];
-      ring.push(from);
-      if (cut) {
-        const to = [b[0]+cut*(c[0]-b[0]), b[1]+cut*(c[1]-b[1])];
-        curve(ring, from, b, b, to, 7);
-      }
-    }
-    tile.ring = ring;
+  const left=Math.min(...art.map(p=>p.x)), right=Math.max(...art.map(p=>p.x+p.w));
+  const top=Math.min(...art.map(p=>p.y)), bottom=Math.max(...art.map(p=>p.y+p.h));
+  const artWidth=right-left;
+  const midX=(left+right)/2, midY=(top+bottom)/2;
+  for(const p of art) {
+    p.cx=(p.x+p.w/2-midX)/artWidth; p.cy=(p.y+p.h/2-midY)/artWidth;
+    p.width=p.w/artWidth; p.height=p.h/artWidth;
   }
 
-  function geometry(tile, progress, phase, camera, index, chapter) {
-    const spread = 1 - smooth((progress - tile.start) / (tile.end - tile.start));
-    const stroke = smooth((chapter.local - index*.045)/(.83-index*.045));
-    const flourish = chapter.strength * Math.sin(stroke*Math.PI)**2;
-    const open = Math.max(spread, flourish*(.88 - (index%2)*.16));
-    const beat = phase * .83 + index * 1.86;
-    const wave = reduceMotion() ? 0 : Math.sin(beat);
-    const glide = reduceMotion() ? 0 : Math.cos(beat * .82 + index);
-    // Separated pieces each have their own axis and phase. Docked pieces
-    // share the camera movement so the complementary edges stay joined.
-    const arc = Math.sin(Math.PI * open);
-    const direction = (chapter.index+index)%2===0 ? 1 : -1;
-    const twist = (tile.twist + .24 * wave) * open + arc * tile.twist * 2 + direction*flourish*.79;
-    const tilt = (tile.tilt + .20 * glide) * open + arc * .21 + flourish*.30;
-    const cosTilt = Math.cos(tilt), sinTilt = Math.sin(tilt);
-    const cosTwist = Math.cos(twist), sinTwist = Math.sin(twist);
-    // A quarter-turn around the assembly center sends pieces around one
-    // another; settling the beat restores their exact complementary edges.
-    const orbit = flourish * (chapter.index%2===0 ? .99 : -1.10);
-    const x = tile.x + (tile.spread[0] + .10 * glide) * open;
-    const z = tile.z + (tile.spread[1] + .10 * wave) * open;
-    const dx = x*Math.cos(orbit) - z*Math.sin(orbit);
-    const dz = z*Math.cos(orbit) + x*Math.sin(orbit);
-    const lift = (tile.spread[2] + .15 * wave) * open + .20 * arc + flourish*(.24+index*.065);
-    function project(x, z, h) {
-      const zTilt = z*cosTilt - h*sinTilt;
-      const altitude = h*cosTilt + z*sinTilt + lift;
-      const xx = dx + x*cosTwist - zTilt*sinTwist;
-      const zz = dz + zTilt*cosTwist + x*sinTwist;
-      const depth = camera.sin*xx + camera.cos*zz;
-      return [camera.cos*xx - camera.sin*zz, depth*camera.pitch - altitude*camera.lift, depth];
-    }
-    const top = tile.ring.map(([x,z]) => project(x,z,thickness));
-    const bottom = tile.ring.map(([x,z]) => project(x,z,0));
-    return { tile, index, top, bottom, project, depth: project(0,0,0)[2] };
-  }
+  const stars = [
+    [-.52,-.26,4.1],[-.42,-.31,1.5],[-.35,-.43,2.4],[-.31,-.46,1.1],[-.17,-.53,1.5],
+    [.40,-.37,1.5],[.55,-.24,2.3],[.61,-.09,1.4],[.54,.31,3.8],[.45,.37,1.2],
+    [.37,.41,1.8],[.22,.46,1.1],[-.23,.47,3.0],[-.38,.39,1.1],[-.49,.25,1.6]
+  ];
+  let width=0,height=0,ratio=1,layout=[],marks=[0,1],flight=null,distance=1;
+  let target=0,position=0,clock=0,previous=0,frame=0,replay=null,paused=false,ready=false;
+  let enabled = new URLSearchParams(location.search).get('movimento')==='completo';
+  const reduced = () => preference.matches && !enabled;
+  const cursor={x:0,y:0,tx:0,ty:0};
 
-  function color(rgb, factor, white = 0) {
-    return 'rgb(' + rgb.map(c => Math.min(255, Math.round(c*factor + white))).join(',') + ')';
-  }
-  function polygon(path) {
-    ctx.beginPath();
-    ctx.moveTo(path[0][0], path[0][1]);
-    for (let i = 1; i < path.length; i++) ctx.lineTo(path[i][0], path[i][1]);
-    ctx.closePath();
-  }
-
-  function drawTile(mesh, scale, phase) {
-    const { tile, top, bottom, project, index } = mesh;
-    const wallSegments = [];
-    for (let i = 0; i < top.length; i++) {
-      const j = (i+1) % top.length;
-      const dx = top[j][0] - top[i][0], dy = top[j][1] - top[i][1];
-      const downX = bottom[i][0]-top[i][0], downY = bottom[i][1]-top[i][1];
-      if (dx*downY - dy*downX >= 0) continue;
-      const intensity = .49 + .22*dy/(Math.hypot(dx,dy) || 1);
-      wallSegments.push({ depth: (top[i][2]+top[j][2])/2, face: [top[i],top[j],bottom[j],bottom[i]], intensity });
-    }
-    wallSegments.sort((a,b) => a.depth-b.depth);
-    for (const segment of wallSegments) {
-      polygon(segment.face);
-      ctx.fillStyle = color(tile.color,segment.intensity);
-      ctx.strokeStyle = ctx.fillStyle;
-      ctx.lineWidth = .75/scale;
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    const back = project(-.5,-.5,thickness), front = project(.5,.5,thickness);
-    const finish = ctx.createLinearGradient(back[0],back[1],front[0],front[1]);
-    finish.addColorStop(0,color(tile.color,.94,35));
-    finish.addColorStop(.38,color(tile.color,1.02,12));
-    finish.addColorStop(1,color(tile.color,.87,0));
-    polygon(top);
-    ctx.fillStyle = finish;
-    ctx.fill();
-    ctx.save();
-    ctx.clip();
-    const pulse = pulses[index];
-    const age = phase - pulse;
-    const docking = age >= 0 && age < .85 ? (1-age/.85) ** 2 : 0;
-    if (!reduceMotion()) {
-      const shine = (phase - index*.23 + 8) % 8;
-      if (shine < 1.45 || docking > 0) {
-        const sweep = docking > 0 ? age/.85 : shine/1.45;
-        const center = project(0,0,thickness);
-        const x = center[0]-1.2 + sweep*2.4;
-        const band = ctx.createLinearGradient(x-.26,center[1]-.1,x+.26,center[1]+.1);
-        band.addColorStop(0,'rgba(255,255,255,0)');
-        band.addColorStop(.55,'rgba(232,226,255,'+ (.15 + .20*docking) +')');
-        band.addColorStop(1,'rgba(255,255,255,0)');
-        ctx.fillStyle = band;
-        ctx.fillRect(center[0]-1.5,center[1]-1.5,3,3);
-      }
-    }
-    // Fine paired edges read as a bevel even on a narrow phone viewport.
-    ctx.strokeStyle = color(tile.color,.90,65+80*docking);
-    ctx.lineWidth = .021 + docking*.035;
-    ctx.stroke();
-    ctx.restore();
-    polygon(top);
-    ctx.lineWidth = .006;
-    ctx.strokeStyle = color(tile.color,.69);
-    ctx.stroke();
-  }
-
-  const pulses = tiles.map(() => -10);
-  const cursor = { x: 0, y: 0, toX: 0, toY: 0 };
-  let width = 0, height = 0, ratio = 1;
-  let target = 0, shown = 0, frame = 0, previous = 0, phase = 0;
-  let onScreen = true, replay = null;
-
-  const main=document.querySelector('#principal');
-  const intro=main.querySelector('.intro');
-  const chapters=[...main.querySelectorAll('.story section')];
-  const unit=clamp, ease=smooth, tau=Math.PI*2;
-  const mix=(a,b,t)=>a+(b-a)*t;
-  let layout=[], marks=[0,1], hero=null, flight=null, distance=1, paused=false;
-  function measure() {
+  function measure(){
     const bounds=canvas.getBoundingClientRect();
-    width=bounds.width; height=bounds.height; ratio=Math.min(2,devicePixelRatio||1);
+    width=bounds.width;height=bounds.height;ratio=Math.min(2,devicePixelRatio||1);
     if (!width || !height) return;
-    const pixelsX=Math.round(width*ratio), pixelsY=Math.round(height*ratio);
-    if(canvas.width!==pixelsX || canvas.height!==pixelsY){canvas.width=pixelsX;canvas.height=pixelsY;}
+    const pw=Math.round(width*ratio), ph=Math.round(height*ratio);
+    if(canvas.width!==pw || canvas.height!==ph){canvas.width=pw;canvas.height=ph;}
     const sy=window.scrollY;
-    const heroBox=intro.getBoundingClientRect();
-    hero={bottom:heroBox.bottom+sy};
-    const reserved=main.querySelector('.mobile-flight')?.getBoundingClientRect();
-    flight=reserved ? {x:reserved.left+reserved.width/2,y:reserved.top+sy+reserved.height/2,w:reserved.width,h:reserved.height} : null;
+    const slot=main.querySelector('.mobile-flight')?.getBoundingClientRect();
+    flight=slot&&slot.height ? {x:slot.left+slot.width/2,y:slot.top+sy+slot.height/2,w:slot.width,h:slot.height} : null;
     layout=chapters.map(section=>{
       const box=section.getBoundingClientRect();
-      const inner=section.querySelector('.chapter-inner') || section.querySelector('h2') || section;
-      const content=inner.getBoundingClientRect();
-      const onLeft = (content.left+content.right)/2 < width/2;
-      const gap=onLeft ? width-content.right : content.left;
-      return {top:box.top+sy,bottom:box.bottom+sy,x:onLeft ? width-gap/2 : gap/2,free:gap};
+      const content=(section.querySelector('.chapter-inner')||section).getBoundingClientRect();
+      const onLeft=(content.left+content.right)<width;
+      const free=onLeft ? width-content.right : content.left;
+      return {top:box.top+sy,bottom:box.bottom+sy,x:onLeft?width-free/2:free/2,free};
     });
-    distance=Math.max(1,document.documentElement.scrollHeight-window.innerHeight);
-    // Measured boundaries keep a beat aligned with each chapter after reflow.
+    distance=Math.max(1,document.documentElement.scrollHeight-innerHeight);
     marks=[0];
     for(const row of layout){
-      const start=clamp((row.top-height*.46)/distance);
-      if(start>marks[marks.length-1]+.028 && start<.96) marks.push(start);
+      const mark=unit((row.top-height*.46)/distance);
+      if(mark>marks.at(-1)+.028 && mark<.96) marks.push(mark);
     }
     marks.push(1);
-    target=unit(window.scrollY/distance);
-    refresh();
+    target=unit(sy/distance);
+    schedule();
   }
-
-  function chapterAt(progress) {
+  function chapterAt(progress){
     let index=0;
     while(index<marks.length-2 && progress>=marks[index+1]) index++;
-    const local=clamp((progress-marks[index])/(marks[index+1]-marks[index]));
-    const coordinate=index+smooth(local);
-    // An independent panorama in each chapter. Its endpoints meet as the
-    // reader crosses the boundary in either direction.
-    const angle=.85*Math.sin(coordinate*1.72)+.35*Math.sin(coordinate*3.14);
-    const strength=reduceMotion() || replay ? 0 : (1-smooth((progress-.80)/.17));
-    return {index,local,angle,strength};
+    return {index,local:unit((progress-marks[index])/(marks[index+1]-marks[index]))};
   }
-
-  function stillFrameAt(scrollY) {
-    // Reduced-motion readers see a fixed tableau in each chapter.
-    const center=flight ? flight.y-scrollY : height*.55;
+  function stage(still){
+    const sy=window.scrollY;
     if(width<=800){
-      if(flight && center>flight.h*.38) return {x:flight.x,y:center,size:Math.min(flight.w*.152,flight.h*.25,75),rail:0};
-      return {x:width-26,y:height*.46,size:11.8,rail:1};
+      const slot=flight||{x:width*.5,y:intro.offsetHeight+80,w:width,h:160};
+      const cy=slot.y-sy;
+      const rail=still ? (cy<slot.h*.38 ? 1 : 0) : smooth((height*.23+slot.h*.37-cy)/(height*.23+slot.h*.37));
+      const railY=height*(still ? .45 : .47+.23*Math.sin(target*tau*2.25-.6));
+      return {x:mix(slot.x,width-26,rail),y:mix(cy,railY,rail),w:mix(Math.min(slot.w*.70,slot.h*.82),39,rail),rail};
     }
-    const focus=scrollY+height*.46;
-    let current=null;
-    for(const row of layout){if(row.top>focus)break;current=row;}
-    return current ? {x:current.x,y:height*.47,size:Math.min(current.free*.18,height*.142,152),rail:0}
-      : {x:width*.76,y:height*.44,size:Math.min(width*.105,height*.166,190),rail:0};
-  }
-
-  function frameAt(scrollY) {
-    const progress=unit(scrollY/distance);
-    if(width<=800){
-      const railX=width-26;
-      const railY=height*(.47+.23*Math.sin(progress*tau*2.25-.6));
-      const slot=flight||{x:width*.5,y:hero.bottom+85,w:width,h:160};
-      const center=slot.y-scrollY;
-      const slotUnit=Math.min(slot.w*.152,slot.h*.25,75);
-      const lift=ease((height*.23+slot.h*.37-center)/(height*.23+slot.h*.37));
-      return {x:mix(slot.x,railX,lift),y:mix(center,railY,lift),size:mix(slotUnit,11.8,lift),rail:lift};
-    }
-
-    let anchorX=width*.76;
-    let size=Math.min(width*.105,height*.166,190);
-    let swing=0,local=.5;
-    const focus=scrollY+height*.49;
-    // Center changes only near a chapter boundary, through its whitespace.
+    const focus=sy+height*.46;
+    let x=width*.76,y=height*.44,w=Math.min(width*.35,height*.64,655);
     for(const row of layout){
-      const blend=ease((focus-row.top+height*.18)/(height*.36));
-      if(blend<=0) break;
-      const crosses=Math.abs(row.x-anchorX)>width*.25;
-      if(crosses && blend<1) swing=Math.sin(Math.PI*blend);
-      anchorX=mix(anchorX,row.x,blend);
-      size=mix(size,Math.max(20,Math.min(row.free*.180,height*.142,152)),blend);
-      local=mix(local,unit((focus-row.top)/(row.bottom-row.top||1)),blend);
+      const blend=still ? Number(focus>=row.top) : smooth((focus-row.top+height*.19)/(height*.38));
+      if(!blend) break;
+      const local=unit((focus-row.top)/(row.bottom-row.top||1));
+      const crossing=Math.abs(row.x-x)>width*.25 ? Math.sin(Math.PI*blend) : 0;
+      x=mix(x,row.x,blend);
+      y=mix(y,height*(still ? .46 : .46+.085*Math.sin(local*tau-.32)),blend)-height*.16*crossing;
+      w=mix(w,Math.min(row.free*.69,height*.48,515),blend)*(1-.48*crossing);
     }
-    const afterIntro=ease((focus-(layout[0]?.top??Infinity)+height*.18)/(height*.36));
-    const drift=Math.sin(local*tau*.74-.3)*height*.14;
-    return {x:anchorX,y:mix(height*.44,height*.47+drift,afterIntro)-height*.23*swing,size:size*(1-.52*swing),rail:0};
+    return {x,y,w,rail:0};
   }
-
-  function drawDust(time, progress, centerX, centerY, radius) {
-    // Two fine ribbons follow the travelling sculpture in its local orbit.
-    ctx.save();
-    ctx.translate(centerX,centerY);
-    for (let lane=0;lane<2;lane++) {
-      const rx=radius*(lane ? .46 : .49), ry=radius*(lane ? .16 : .22);
-      const tilt=lane ? .27 : -.43;
-      const end=time*(lane ? -.16 : .19)+progress*2.1+(lane ? 2.5 : .7);
-      const rgb=lane ? '165,244,200' : '208,161,255';
-      const tipX=rx*Math.cos(end), tipY=ry*Math.sin(end);
-      ctx.save();
-      ctx.rotate(tilt);
-      ctx.beginPath();
-      ctx.ellipse(0,0,rx,ry,0,end-2.55,end);
-      ctx.strokeStyle='rgba('+rgb+',.44)';
-      ctx.lineWidth=1.1;
-      ctx.stroke();
-      const halo=ctx.createRadialGradient(tipX,tipY,0,tipX,tipY,6);
-      halo.addColorStop(0,'rgba('+rgb+',.68)');
-      halo.addColorStop(.4,'rgba('+rgb+',.36)');
-      halo.addColorStop(1,'rgba('+rgb+',0)');
-      ctx.fillStyle=halo;
-      ctx.fillRect(tipX-6,tipY-6,12,12);
+  function star(x,y,r,color,glow){
+    const halo=ctx.createRadialGradient(x,y,0,x,y,r*4);
+    halo.addColorStop(0,'rgba('+color+','+glow*.72+')');
+    halo.addColorStop(.27,'rgba('+color+','+glow*.29+')');
+    halo.addColorStop(1,'rgba('+color+',0)');
+    ctx.fillStyle=halo;ctx.fillRect(x-r*4,y-r*4,r*8,r*8);
+    ctx.beginPath();ctx.moveTo(x,y-r);
+    ctx.quadraticCurveTo(x+r*.13,y-r*.13,x+r*.72,y);
+    ctx.quadraticCurveTo(x+r*.13,y+r*.13,x,y+r);
+    ctx.quadraticCurveTo(x-r*.13,y+r*.13,x-r*.72,y);
+    ctx.quadraticCurveTo(x-r*.13,y-r*.13,x,y-r);
+    ctx.fillStyle='rgba(252,248,255,'+glow+')';ctx.fill();
+  }
+  function atmosphere(w,t,progress){
+    // The colored arcs cross behind the sculpture. Only their outer limbs and
+    // moving terminals peek out, as in the supplied reference.
+    for(let lane=0;lane<2;lane++){
+      const rgb=lane?'173,255,207':'217,161,255';
+      const rx=w*(lane ? .643 : .644), ry=w*(lane ? .188 : .218);
+      const tilt=lane ? .15 : -.40;
+      const cy=w*(lane?.131:-.100);
+      const head=(lane?-.54:3.05)+(lane?-.19:.21)*t+progress*.66;
+      ctx.save();ctx.translate(0,cy);ctx.rotate(tilt);
+      ctx.lineCap='round';
+      // Fade the orbit toward the tail and concentrate light at its comet.
+      for(let i=0;i<30;i++){
+        const a=head-tau+(i/30)*tau, b=a+tau/30+.004;
+        const light=.20+.46*(i/30)**2;
+        ctx.strokeStyle='rgba('+rgb+','+light+')';ctx.lineWidth=Math.max(.72,w*.0017);
+        ctx.beginPath();ctx.ellipse(0,0,rx,ry,0,a,b);ctx.stroke();
+      }
+      ctx.shadowColor='rgb('+rgb+')';ctx.shadowBlur=Math.max(3,w*.012);
+      ctx.strokeStyle='rgba('+rgb+',.85)';ctx.lineWidth=Math.max(1,w*.0028);
+      ctx.beginPath();ctx.ellipse(0,0,rx,ry,0,head-.27,head);ctx.stroke();
+      ctx.shadowBlur=0;
+      star(Math.cos(head)*rx, Math.sin(head)*ry, Math.max(2.2,w*.008), rgb,.94);
       ctx.restore();
     }
-    ctx.restore();
-    for (let i = 0; i < 17; i++) {
-      const t = i*2.40 + time*(.12 + i%3*.037) + progress*.44;
-      const orbit = radius*(.31 + (i%5)*.037);
-      const x = centerX+Math.cos(t)*orbit;
-      const y = centerY+Math.sin(t)*orbit*.64 - Math.cos(t)*orbit*.24;
-      const alpha = .26+.18*Math.sin(t*1.35+i);
-      if (i%4===0) {
-        ctx.beginPath();
-        ctx.moveTo(x,y);
-        for (let j=1;j<=8;j++) {
-          const a = t-j*.017;
-          ctx.lineTo(centerX+Math.cos(a)*orbit,centerY+Math.sin(a)*orbit*.64-Math.cos(a)*orbit*.24);
-        }
-        ctx.strokeStyle = 'rgba(152,152,244,'+alpha*.6+')';
-        ctx.lineWidth = .9;
-        ctx.stroke();
-      }
-      ctx.beginPath();
-      ctx.arc(x,y,i%4===0 ? 1.6 : .95,0,Math.PI*2);
-      ctx.fillStyle = 'rgba(206,205,255,'+alpha+')';
-      ctx.fill();
-    }
+    stars.forEach(([x,y,r],i)=>{
+      const twinkle=.62+.32*Math.sin(t*(.77+(i%3)*.3)+i*1.8);
+      const radius=Math.max(.9,w/370*r)*(.78+twinkle*.29);
+      star(x*w,y*w,radius,i%4===0?'170,243,207':'215,170,255',twinkle);
+    });
   }
-  function draw(progress) {
-    if (!hero || width < 2 || height < 2) return;
-    const animated = !reduceMotion();
-    const chapter=chapterAt(progress);
-    const yaw = .78 + (animated ? chapter.angle + Math.sin(phase*.44)*.13 + cursor.x*.14 : .22*progress);
-    const pitch = .57 + progress*.075 + (animated ? Math.sin(phase*.53)*.035 + cursor.y*.06 + chapter.strength*.12*Math.sin(chapter.local*Math.PI) : 0);
-    const camera = {sin:Math.sin(yaw), cos:Math.cos(yaw), pitch, lift:Math.sqrt(1-pitch*pitch)};
-    const scene = tiles.map((tile,index) => geometry(tile,progress,phase,camera,index,chapter)).sort((a,b) => a.depth-b.depth);
-    const points = scene.flatMap(tile => tile.top.concat(tile.bottom));
-    const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
-    const left = Math.min(...xs), right = Math.max(...xs);
-    const rear = Math.min(...ys), near = Math.max(...ys);
-    const stage=animated ? frameAt(window.scrollY) : stillFrameAt(window.scrollY);
-    // Autoframe the volumetric puzzle in the whitespace offered by each chapter.
-    const footprint=stage.size*3.60;
-    const scale=Math.min(footprint/(right-left),footprint*.83/(near-rear));
-    const floatX=animated ? Math.sin(phase*.36)*scale*.055*(1-stage.rail) : 0;
-    const centerX=stage.x+floatX, centerY=stage.y;
 
-    ctx.setTransform(ratio,0,0,ratio,0,0);
-    ctx.clearRect(0,0,width,height);
-    if (animated && stage.rail<.75) drawDust(phase,progress,centerX,centerY,footprint*1.12);
-    const bob = animated ? Math.sin(phase*.95)*scale*.029 : 0;
-    ctx.translate(centerX-(left+right)*scale/2,centerY+bob-(rear+near)*scale/2);
-    ctx.scale(scale,scale);
+  function draw(){
+    if(!ready||width<2||height<2)return;
+    const still=reduced();
+    const progress=still ? target : position;
+    const chapter=chapterAt(progress), area=stage(still);
+    const t=still ? 0 : clock;
+    const ending=1-smooth((progress-.85)/.14);
+    const stageRatio=chapter.index/(marks.length-1);
+    const fixedOpen=progress>=.97 ? 0 : (chapter.index===0?0:Math.sin(stageRatio*Math.PI)*.37);
+    ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,width,height);
     ctx.save();
-    ctx.translate((left+right)/2, near+.14);
-    ctx.scale(1,.20);
-    const glow = ctx.createRadialGradient(0,0,0,0,0,1.65);
-    glow.addColorStop(0,'rgba(83,70,181,.26)');
-    glow.addColorStop(.55,'rgba(62,49,141,.15)');
-    glow.addColorStop(1,'rgba(42,39,100,0)');
-    ctx.fillStyle = glow;
-    ctx.fillRect(-1.65,-1.65,3.3,3.3);
+    ctx.translate(area.x+(still?0:Math.sin(t*.48)*area.w*.004),area.y+(still?0:Math.sin(t*.65)*area.w*.006));
+    if(area.rail<.72)atmosphere(area.w,t,progress);
+    const groupTurn=still ? 0 : (.041*Math.sin(t*.68)+cursor.x*.035+cursor.y*.012)*Math.sin(progress*Math.PI)+.061*Math.sin(progress*tau);
+    ctx.rotate(groupTurn);
+    // Each layer travels out from its own center. A fresh chapter starts with
+    // the original alignment, opens, and then brings the four cuts together.
+    art.forEach((p,i)=>{
+      const beat=unit((chapter.local-i*.037)/(.87-i*.037));
+      const chapterOpen=Math.sin(beat*Math.PI)**2*ending;
+      let open=still?fixedOpen:chapterOpen;
+      if(replay!==null && !still) open=replay.open;
+      // The pieces remain separate, including at either end of the journey.
+      // Each follows its own breathing cycle even when reading has stopped.
+      const breath=still ? 0 : (.5-.5*Math.cos(t*(.83+i*.056)+i*.70));
+      const spread=.115+.24*breath+.68*open;
+      const idle=still ? 0 : Math.sin(t*.93+i*1.71)*(.006+.009*open);
+      const ox=p.cx*(1+spread)+Math.cos(i*1.85+t*.43)*.022*open;
+      const oy=p.cy*(1+spread)+idle;
+      const turn=p.turn*(.08+.29*breath+open*(1+.26*Math.sin(chapter.index+i)));
+      const fit=1-.25*open;
+      const dw=p.width*area.w*fit,dh=p.height*area.w*fit;
+      ctx.save();
+      ctx.translate(area.w*ox*fit,area.w*oy*fit);
+      ctx.rotate(turn);
+      ctx.drawImage(p.image,-dw/2,-dh/2,dw,dh);
+      ctx.restore();
+    });
     ctx.restore();
-    for (const mesh of scene) drawTile(mesh,scale,phase);
   }
-
-  function replayProgress(dt) {
-    replay.elapsed += dt;
-    const t = replay.elapsed;
-    if (t < .9) return replay.from*(1-smooth(t/.9));
-    if (t < 1.15) return 0;
-    if (t < 4.5) return smooth((t-1.15)/3.35);
-    if (t < 5.15) return 1;
-    if (t < 6.45) return 1 + (target-1)*smooth((t-5.15)/1.3);
-    replay = null;
-    return target;
+  function schedule(){
+    if(!document.hidden && !frame && ready)frame=requestAnimationFrame(tick);
   }
-  function tick(time) {
-    frame = 0;
-    if (!onScreen || document.hidden) return;
-    const active = replay || Math.abs(target-shown)>.001 || Math.abs(cursor.toX-cursor.x)>.01 || Math.abs(cursor.toY-cursor.y)>.01;
-    const elapsed = time - (previous || time-40);
-    if (elapsed < (active ? 14 : 40) && !reduceMotion() && !paused) { refresh(); return; }
-    const dt = Math.min(80,elapsed);
-    previous = time;
-    const before = shown;
-    if (!reduceMotion() && !paused) {
-      phase += dt/1000;
-      shown = replay ? replayProgress(dt/1000) : shown+(target-shown)*(1-Math.exp(-dt/64));
-      if (!replay && Math.abs(target-shown)<.0006) shown = target;
-      tiles.forEach((tile,i) => { if (before < tile.end && shown >= tile.end) pulses[i] = phase; });
-      const ease = 1-Math.exp(-dt/150);
-      cursor.x += (cursor.toX-cursor.x)*ease;
-      cursor.y += (cursor.toY-cursor.y)*ease;
+  function tick(now){
+    frame=0;if(document.hidden)return;
+    const active=!reduced()&&!paused;
+    const elapsed=now-(previous||now-41);
+    const fast=replay!==null||Math.abs(position-target)>.001;
+    if(active&&elapsed<(fast?14:39)){schedule();return;}
+    const dt=Math.min(85,elapsed)/1000;
+    previous=now;
+    if(active){
+      clock+=dt;
+      position+= (target-position)*(1-Math.exp(-dt*16));
+      if(Math.abs(position-target)<.0004)position=target;
+      const smoothPointer=1-Math.exp(-dt*7);
+      cursor.x=mix(cursor.x,cursor.tx,smoothPointer);cursor.y=mix(cursor.y,cursor.ty,smoothPointer);
+      if(replay!==null){
+        replay.time+=dt;
+        const s=replay.time;
+        if(s<1.85) replay.open=mix(replay.from,1,smooth(s/1.85));
+        else if(s<2.15) replay.open=1;
+        else if(s<5.4) replay.open=1-smooth((s-2.15)/3.25);
+        else if(s<6.1) replay.open=0;
+        else if(s<7.1) replay.open=smooth((s-6.1))*Math.sin(Math.PI*chapterAt(position).local)**2;
+        else replay=null;
+      }
     }
-    // With reduced motion each chapter changes the assembly exactly once.
-    // A final explicit stop also covers short contact sections and rounded
-    // viewport scroll heights on mobile.
-    const milestone=target>=.97 ? 1 : chapterAt(target).index/(marks.length-1);
-    draw(reduceMotion() ? milestone : shown);
-    if (!reduceMotion() && !paused) refresh();
+    draw();
+    if(active)schedule();
   }
-  function refresh() {
-    if (!frame && onScreen && !document.hidden) frame = requestAnimationFrame(tick);
-  }
-  function scrollChanged(){
-    target=clamp(window.scrollY/distance);
-    refresh();
-  }
-  window.addEventListener('scroll',scrollChanged,{passive:true});
-  window.addEventListener('cv-progress', e=>{
-    if(Number.isFinite(e.detail)){target=clamp(e.detail);refresh();}
+  window.addEventListener('cv-progress',e=>{if(Number.isFinite(e.detail)){target=unit(e.detail);schedule();}});
+  window.addEventListener('scroll',()=>{target=unit(scrollY/distance);schedule();},{passive:true});
+  window.addEventListener('cv-pause',e=>{paused=e.detail===true;previous=0;schedule();});
+  window.addEventListener('cv-enable',()=>{enabled=true;previous=0;schedule();});
+  window.addEventListener('cv-replay',()=>{
+    if(reduced())return;
+    replay={time:0,open:0,from:Math.sin(chapterAt(position).local*Math.PI)**2};
+    paused=false;previous=0;schedule();
   });
-  window.addEventListener('cv-pause', e=>{paused=e.detail===true;previous=0;refresh();});
-  window.addEventListener('cv-enable', () => { optedIn = true; previous = 0; refresh(); });
-  window.addEventListener('cv-replay', () => {
-    if (reduceMotion()) return;
-    paused=false; previous=0; replay = { from: shown, elapsed: 0 };
-    refresh();
-  });
-  // Stage layout can make the canvas pointer-transparent. Sample the pointer
-  // from the page and normalize it only in the vicinity of the stage.
-  window.addEventListener('pointermove', event => {
-    if (!onScreen || reduceMotion() || event.pointerType === 'touch') return;
-    const rect = canvas.getBoundingClientRect();
-    const x = (event.clientX-rect.left)/rect.width * 2 - 1;
-    const y = (event.clientY-rect.top)/rect.height * 2 - 1;
-    const within = Math.abs(x)<1.35 && Math.abs(y)<1.35;
-    cursor.toX = within ? Math.max(-1,Math.min(1,x)) : 0;
-    cursor.toY = within ? Math.max(-1,Math.min(1,y)) : 0;
-  }, { passive:true });
-  document.addEventListener('pointerleave', () => { cursor.toX = cursor.toY = 0; });
-  function visibilityChanged() {
-    if (frame) cancelAnimationFrame(frame);
-    frame = 0; previous = 0;
-    refresh();
-  }
-  document.addEventListener('visibilitychange', visibilityChanged);
-  motion.addEventListener('change', () => {
-    optedIn = false;
-    replay = null;
-    pulses.fill(-10);
-    visibilityChanged();
-  });
-  window.addEventListener('resize', measure, { passive: true });
-  if (window.ResizeObserver) new ResizeObserver(measure).observe(main);
-  if (window.IntersectionObserver) {
-    new IntersectionObserver(entries => {
-      onScreen = entries[0].isIntersecting;
-      visibilityChanged();
-    }).observe(canvas);
-  }
+  window.addEventListener('pointermove',e=>{
+    if(paused||reduced()||e.pointerType==='touch')return;
+    cursor.tx=Math.max(-1, Math.min(1,2*e.clientX/width-1));
+    cursor.ty=Math.max(-1, Math.min(1,2*e.clientY/height-1));
+  },{passive:true});
+  document.addEventListener('pointerleave',()=>{cursor.tx=cursor.ty=0;});
+  document.addEventListener('visibilitychange',()=>{if(frame)cancelAnimationFrame(frame);frame=0;previous=0;schedule();});
+  preference.addEventListener('change',()=>{enabled=false;replay=null;previous=0;schedule();});
+  window.addEventListener('resize',measure,{passive:true});
+  if(window.ResizeObserver)new ResizeObserver(measure).observe(main);
   document.fonts?.ready.then(measure);
   measure();
+  Promise.all(art.map(p=>new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{p.image=img;resolve();};
+    img.onerror=()=>reject(new Error('Falha ao carregar '+p.file));
+    img.src=new URL(p.file,artBase).href;
+  }))).then(()=>{ready=true;schedule();}).catch(error=>console.error(error));
 })();
-

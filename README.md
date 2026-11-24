@@ -8,7 +8,7 @@ Página pessoal em português com experiência, formação e projetos. [Acessar 
 | --- | --- |
 | Selecionar o conteúdo | Usar o LinkedIn para experiência e formação. Vincular cada projeto ao repositório que demonstra o trabalho. |
 | Organizar a leitura | Abrir com nome e atuação na Consisa Sistemas. Apresentar trajetória, tecnologias, projetos e arquivo cronológico de 2023 a 2026. Encerrar com contato direto pelo WhatsApp. |
-| Construir a interação | Modelar quatro peças com curvas complementares, espessura e iluminação. Vincular câmera e encaixes à distância percorrida na página. Acrescentar levitação, reflexos de encaixe, entrada progressiva do texto e replay independente da rolagem. |
+| Construir a interação | Animar quatro peças com acabamento 3D e órbitas luminosas. Dar a cada peça sua própria rotação e trajetória. Usar a rolagem para aproximar e afastar os encaixes, preservando uma fresta entre as peças. |
 | Adaptar e testar | Animar o quebra-cabeça 3D sobre a página, com a posição guiada pelos capítulos. No desktop, alternar os lados da leitura. No celular, levar a montagem da abertura à margem do texto. Testar pausa e retomada. Testar âncoras, leitura por teclado, impressão, estado final e preferência por movimento reduzido. |
 | Publicar e manter | Servir arquivos estáticos pelo GitHub Pages a partir da raiz da branch main. Conferir a URL pública e revisar o currículo quando houver mudança profissional ou novo projeto representativo. |
 
@@ -20,4 +20,4 @@ Página pessoal em português com experiência, formação e projetos. [Acessar 
 - [Perceptron](https://github.com/BartzZin/ProjetoDeepLearning)
 - [Documentação de publicação do GitHub Pages](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)
 
-O conteúdo fica em `index.html`, a apresentação e a versão de impressão em `style.css`. A projeção 3D está em `puzzle.js` e a leitura de rolagem em `scroll.js`. A página abre diretamente no navegador e dispensa instalação de dependências.
+O conteúdo fica em `index.html`, a apresentação e a versão de impressão em `style.css`. As quatro imagens com fundo transparente ficam em `arte/`. O arquivo `puzzle.js` anima cada peça e desenha as órbitas. O arquivo `scroll.js` acompanha a leitura e controla pausa e replay. O site dispensa instalação de dependências.
