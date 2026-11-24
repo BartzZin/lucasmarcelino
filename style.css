@@ -59,7 +59,7 @@ a:hover, button:hover { color: var(--accent); text-decoration: underline; text-u
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .skip { position: fixed; top: -5rem; z-index: 5; padding: 12px; background: var(--bg); }
 .skip:focus { top: 1rem; }
-.bar, nav, .actions, .links, footer { display: flex; align-items: center; }
+.bar, nav, .actions, .links, footer, .footer-actions { display: flex; align-items: center; }
 .bar { justify-content: space-between; padding: 20px 0; gap: 8px; border-bottom: 1px solid #996fa4; font-size: clamp(15px,1.35vw,22px); }
 .identity b { font-weight: 900; letter-spacing: -.065em; }
 .identity span { color: var(--soft); }
@@ -91,11 +91,58 @@ h3 a span { color: var(--accent); display: inline-block; font-size: .74em; verti
 .archive { list-style: none; padding: 0; margin: 20px 0 0; }
 .archive li { display: grid; grid-template-columns: minmax(77px,.25fr) 1fr; gap: 16px; }
 time { font-family: ui-monospace,Consolas,monospace; margin-top: .36em; }
-.whatsapp { background: var(--accent); color: #182c20; border-color: var(--accent); }
-.whatsapp:hover { color: #182c20; background: #caffdf; }.phone { margin: 8px 0 22px; color: var(--soft); font-variant-numeric: tabular-nums; }
-.links { color: var(--accent); gap: 22px; }
-footer { border-top: 1px solid var(--line); padding: 23px 0; gap: 22px; color: var(--soft); font-size: .9rem; }
-footer span { margin-right: auto; }
+.story #contato { padding: clamp(55px,11vw,180px) 0 0; }
+#contato .contact-panel {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  width: min(83.333%,1150px); margin-inline: auto;
+  padding: clamp(32px,3.4vw,55px) clamp(16px,3vw,46px);
+  border: 1px solid #9066ab; border-radius: clamp(24px,3vw,46px);
+  background: radial-gradient(ellipse at 50% 55%,#492553 0%,#2b1739 51%,#201029 100%);
+  box-shadow: 0 26px 76px #13071d56, inset 0 1px #c99de81f;
+}
+#contato h2 {
+  font-size: clamp(42px,6.05vw,94px);
+  margin: 0 0 clamp(45px,4.85vw,74px);
+}
+#contato h2::after {
+  inset: auto 50% clamp(-31px,-2vw,-20px) auto;
+  translate: 50% 0; width: clamp(38px,5.7vw,88px); height: clamp(4px,.5vw,8px);
+  border-radius: 8px; background: var(--accent); transform-origin: center;
+}
+.whatsapp {
+  display: inline-flex; align-items: center; justify-content: center; gap: clamp(8px,1.4vw,23px);
+  min-height: clamp(48px,6.2vw,95px);
+  padding: 0 clamp(12px,4.2vw,65px);
+  background: var(--accent); color: #162820; border-color: var(--accent);
+  font-size: clamp(16px,2.4vw,38px); font-weight: 750; letter-spacing: -.025em;
+}
+.whatsapp svg { width: 1em; height: 1em; flex: none; }
+.whatsapp:hover { color: #162820; background: #caffdf; text-decoration: none; }
+.phone {
+  margin: clamp(14px,1.7vw,25px) 0 clamp(18px,2.5vw,38px);
+  color: #c6a1e8; font-size: clamp(17px,2.5vw,38px); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.links { justify-content: center; flex-wrap: wrap; gap: clamp(10px,2.8vw,42px); }
+.links a {
+  display: inline-flex; align-items: center; justify-content: center; gap: .44em;
+  min-height: clamp(40px,4.05vw,62px); padding: 0 clamp(12px,2.4vw,39px);
+  border: 1px solid #bf98db; border-radius: 99px;
+  background: #261633; font-size: clamp(14px,1.8vw,28px); font-weight: 650;
+}
+.links a:hover { background: #3d254d; color: var(--ink); text-decoration: none; }
+footer {
+  flex-direction: column; justify-content: center; text-align: center;
+  padding: clamp(36px,5.2vw,80px) 0 clamp(46px,7.1vw,109px);
+  gap: clamp(12px,1.5vw,23px); color: #c6a1e8;
+}
+.footer-name { font-size: clamp(19px,2.1vw,32px); font-weight: 650; }
+.footer-actions { flex-wrap: wrap; justify-content: center; gap: 8px clamp(17px,3.65vw,56px); }
+.footer-actions a, .footer-actions button {
+  display: inline-flex; align-items: center; justify-content: center; gap: .35em;
+  min-height: 44px; padding: 4px 0; font-size: clamp(14px,1.56vw,24px); font-weight: 590;
+}
+.footer-actions [hidden] { display: none; }
 @media(max-width:800px) {
   .identity span { display: none; }.bar { padding: 16px 0; } nav { gap: 13px; font-size: 14px; }
   .intro { width: 100%; min-height: auto; padding: 37px 0 0; }
@@ -107,7 +154,8 @@ footer span { margin-right: auto; }
   .story section:nth-child(even) .chapter-inner { margin-left: 0; }
   h2 { font-size: clamp(35px,9vw,52px); }
   .archive li { display: block; }.archive time { display: block; margin: 0 0 7px; }
-  footer { flex-wrap: wrap; column-gap: 10px; } footer span { width: 100%; }
+  #contato .contact-panel { width: calc(100% - 44px); }
+  #contato h2 { font-size: clamp(35px,8vw,62px); }
 }
 @media screen {
   body::before {
@@ -187,5 +235,10 @@ footer span { margin-right: auto; }
   .story section { padding: 6pt 0; border: 0; }.piece { padding: 6pt 0; break-inside: avoid; transform: none !important; }
   h2 { font-size: 16pt; margin: 5pt 0; }h3 { font-size: 12pt; }small,time { color: #444; margin: 0 0 2pt; }
   .archive { margin: 0; }.whatsapp { border: 0; padding: 0; color: black; background: white; }
+  .story #contato { padding: 6pt 0; }
+  #contato .contact-panel { width: 100%; padding: 0; border: 0; background: white; box-shadow: none; display: block; text-align: left; }
+  #contato h2 { font-size: 16pt; margin: 5pt 0; }
+  #contato a { border: 0; color: black; background: white; font: inherit; padding: 0; min-height: 0; }
+  #contato svg { display: none; }
   .links { display: block; }.links a { display: block; }.links a:after { content: ' — ' attr(href); }
 }

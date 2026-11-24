@@ -6,9 +6,9 @@
   <meta name="theme-color" content="#10101a">
   <meta name="description" content="Currículo de Lucas Marcelino Lara, desenvolvedor e analista de sistemas na Consisa Sistemas. Conheça seus projetos em documentos fiscais, integrações, Delphi e aprendizado de máquina.">
   <title>Lucas Marcelino Lara · Desenvolvimento de sistemas</title>
-  <link rel="stylesheet" href="./style.css?v=sem-divisoria">
+  <link rel="stylesheet" href="./style.css?v=rodape">
   <script src="./particles.js?v=particulas" defer></script>
-  <script src="./puzzle.js?v=particulas" defer></script>
+  <script src="./puzzle.js?v=rodape" defer></script>
   <script src="./scroll.js?v=sem-divisoria" defer></script>
 </head>
 <body id="inicio">
@@ -76,16 +76,34 @@
         </ol>
         </div>
       </section>
-      <section id="contato">
-        <div class="chapter-inner">
-        <h2>Vamos conversar?</h2>
-        <a class="whatsapp" href="https://wa.me/5546984159384">Abrir WhatsApp ↗</a>
-        <p class="phone">+55 (46) 98415-9384</p>
-        <div class="links"><a href="https://www.linkedin.com/in/lucas-marcelino-000327238/">LinkedIn ↗</a><a href="https://github.com/BartzZin">GitHub ↗</a></div>
+      <section id="contato" aria-labelledby="contato-titulo">
+        <div class="chapter-inner contact-panel">
+          <h2 id="contato-titulo">Vamos conversar?</h2>
+          <a class="whatsapp" href="https://wa.me/5546984159384">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.5 11.7a9.5 8.6 0 0 1-9.5 8.6 10.5 10.5 0 0 1-3.4-.6L3 21.8l1.5-4.5a8.1 8.1 0 0 1-2-5.6A9.5 8.6 0 0 1 12 3.1a9.5 8.6 0 0 1 9.5 8.6Z"/>
+              <path d="M8 11.7h.1m3.9 0h.1m3.9 0h.1" stroke-width="2.3"/>
+            </svg>
+            Abrir WhatsApp
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 19 19 5M8 5h11v11"/>
+            </svg>
+          </a>
+          <p class="phone">+55 (46) 98415-9384</p>
+          <div class="links">
+            <a href="https://www.linkedin.com/in/lucas-marcelino-000327238/">LinkedIn <span aria-hidden="true">↗</span></a>
+            <a href="https://github.com/BartzZin">GitHub <span aria-hidden="true">↗</span></a>
+          </div>
         </div>
       </section>
     </div>
   </main>
-  <footer><span>Lucas Marcelino Lara</span><button type="button" id="print" hidden>Imprimir currículo</button><a href="#inicio">Voltar ao início ↑</a></footer>
+  <footer>
+    <span class="footer-name">Lucas Marcelino Lara</span>
+    <div class="footer-actions">
+      <button type="button" id="print" hidden>Imprimir currículo</button>
+      <a href="#inicio">Voltar ao início <span aria-hidden="true">↑</span></a>
+    </div>
+  </footer>
 </body>
 </html>

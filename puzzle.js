@@ -72,7 +72,7 @@
     layout=chapters.map(section=>{
       const box=section.getBoundingClientRect();
       const content=(section.querySelector('.chapter-inner')||section).getBoundingClientRect();
-      const onLeft=(content.left+content.right)<contentBox.left+contentBox.right;
+      const onLeft=section.id!=='contato' && content.left+content.right<contentBox.left+contentBox.right;
       const free=onLeft ? contentBox.right-content.right : content.left-contentBox.left;
       return {
         top:box.top+sy,bottom:box.bottom+sy,
