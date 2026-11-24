@@ -7,7 +7,9 @@
   if (!ctx || !main) return;
   const intro = main.querySelector('.intro');
   const chapters = [...main.querySelectorAll('.story section')];
-  const textBlocks = [...main.querySelectorAll('.story h2, .piece h3, .piece p, .piece small, .archive time, .section-note, .whatsapp, .phone, .links')];
+  const textBlocks = [...document.querySelectorAll(
+    'header, .intro h1, .intro p, .intro .actions, .chapter-inner, .story h2, .story .piece, footer'
+  )];
   const preference = matchMedia('(prefers-reduced-motion: reduce)');
   const tau = Math.PI * 2;
   const unit = v => Math.max(0, Math.min(1, v));
@@ -42,7 +44,9 @@
   let width=0,height=0,ratio=1,layout=[],marks=[0,1],flight=null,hero=null,distance=1;
   let target=0,position=0,clock=0,previous=0,frame=0,ready=false;
   let painted=null;
+  let paintedScroll=-Infinity;
   let settled=null, transfer=null, arrival=-Infinity;
+  let protectedRects=null, protectedScroll=-Infinity;
   const cursor={x:0,y:0,tx:0,ty:0};
 
   function measure(){
@@ -52,6 +56,7 @@
     settled=null;
     transfer=null;
     arrival=-Infinity;
+    protectedRects=null;
     ratio=Math.min(ratio,Math.sqrt(7_000_000/(width*height)));
     const pw=Math.round(width*ratio), ph=Math.round(height*ratio);
     if(canvas.width!==pw || canvas.height!==ph){canvas.width=pw;canvas.height=ph;painted=null;}
@@ -67,7 +72,12 @@
       const content=(section.querySelector('.chapter-inner')||section).getBoundingClientRect();
       const onLeft=(content.left+content.right)<contentBox.left+contentBox.right;
       const free=onLeft ? contentBox.right-content.right : content.left-contentBox.left;
-      return {top:box.top+sy,bottom:box.bottom+sy,x:onLeft?content.right+free/2:contentBox.left+free/2,free};
+      return {
+        top:box.top+sy,bottom:box.bottom+sy,
+        contentTop:content.top+sy,contentBottom:content.bottom+sy,
+        x:onLeft?content.right+free/2:contentBox.left+free/2,free,
+        side:onLeft?1:-1
+      };
     });
     distance=Math.max(1,document.documentElement.scrollHeight-innerHeight);
     marks=[0];
@@ -89,62 +99,71 @@
     if(width<=800){
       const slot=flight||{x:width*.5,y:intro.offsetHeight+80,w:width,h:160};
       const cy=slot.y-sy;
-      const rail=smooth((height*.23+slot.h*.37-cy)/(height*.23+slot.h*.37));
+      const rail=smooth(sy/Math.max(60,slot.y-height*.32));
       const railY=height*(.47+(gentle ? .055 : .23)*Math.sin(target*tau*2.25-.6));
-      return {x:mix(slot.x,width-26,rail),y:mix(cy,railY,rail),w:mix(Math.min(slot.w*.70,slot.h*.82),39,rail),rail};
+      const lift=rail===1 ? smooth((height*.32-cy)/(height*.22)) : 0;
+      return {x:mix(slot.x,width-21,rail),y:mix(cy,railY,lift),w:mix(Math.min(slot.w*.70,slot.h*.73),32,rail),rail};
     }
     const readingHeight=Math.min(height,hero.h/.82);
     const focus=sy+readingHeight*.46;
-    let x=hero.x,y=Math.max(readingHeight*.24,hero.top-sy+Math.min(hero.h,readingHeight)*.49);
-    let w=Math.min(hero.free*.78,hero.h*.72,readingHeight*.66);
-    let side=1;
-    for(const row of layout){
-      const blend=smooth((focus-row.top+readingHeight*.19)/(readingHeight*.38));
-      if(!blend) break;
-      const local=unit((focus-row.top)/(row.bottom-row.top||1));
-      const nextSide=row.x>=width*.5 ? 1 : -1;
-      if(nextSide!==side && blend<.5) break;
-      const step=nextSide===side ? blend : 1;
-      x=mix(x,row.x,step);
-      y=mix(y,readingHeight*(.46+(gentle ? .026 : .085)*Math.sin(local*tau-.32)),step);
-      w=mix(w,Math.min(row.free*.69,readingHeight*.54),step);
-      side=nextSide;
+    const index=layout.findLastIndex(row=>focus>=row.top);
+    if(index<0){
+      const w=Math.min(hero.free*.73,hero.h*.68,readingHeight*.66);
+      const docY=hero.top+hero.h*.49;
+      return {x:hero.x,y:docY-sy,docY,w,rail:0,side:1,index};
     }
-    return {x,y,w,rail:0,side};
+    const row=layout[index];
+    const heightAvailable=row.bottom-row.top;
+    const w=Math.min(row.free*.65,readingHeight*.53,heightAvailable*.61);
+    const local=unit((focus-row.top)/heightAvailable);
+    const desired=focus+readingHeight*(gentle ? .026 : .073)*Math.sin(local*tau-.32);
+    const docY=Math.max(row.top+w*.67,Math.min(row.bottom-w*.67,desired));
+    return {x:row.x,y:docY-sy,docY,w,rail:0,side:row.side,index};
   }
 
   function travelingStage(destination,time){
-    if(destination.rail>0 || destination.side===undefined) return destination;
+    if(destination.side===undefined) return destination;
     settled??=destination;
+    if(Math.abs(settled.index-destination.index)>1 ||
+      (transfer && destination.index!==transfer.from.index && destination.index!==transfer.to.index)){
+      transfer=null;
+      settled=destination;
+      arrival=time;
+    }
     if(!transfer && settled.side!==destination.side){
-      const y=flightLane(settled,destination);
-      transfer={start:time,from:settled,to:destination,y,lane:y,lastScroll:scrollY,lastCheck:time};
+      const border=Math.max(settled.index,destination.index);
+      const before=layout[border-1], after=layout[border];
+      const start=before?.contentBottom ?? hero.top+hero.h;
+      const lane=(start+after.contentTop)/2;
+      const laneWidth=Math.min(settled.w,destination.w,Math.max(1,(after.contentTop-start)*2.5));
+      transfer={start:time,from:settled,to:destination,lane,laneWidth};
     }
     if(!transfer){
-      settled=destination;
-      return destination;
+      const docY=mix(settled.docY,destination.docY,.22);
+      settled={...destination,
+        x:mix(settled.x,destination.x,.22),
+        w:mix(settled.w,destination.w,.22),
+        docY,y:docY-window.scrollY
+      };
+      return settled;
     }
-    const {from,to,start}=transfer;
-    const phase=unit((time-start)/1.22);
-    const travel=smooth((phase-.18)/.64);
-    const formation=smooth(phase/.26)*(1-smooth((phase-.73)/.27));
-    if(time-transfer.lastCheck>.12 && Math.abs(scrollY-transfer.lastScroll)>24){
-      transfer.lane=flightLane(from,to);
-      transfer.lastScroll=scrollY;
-      transfer.lastCheck=time;
-    }
-    transfer.y=mix(transfer.y,transfer.lane,.13);
-    const laneY=transfer.y;
+    const {from,to,start,lane,laneWidth}=transfer;
+    const phase=unit((time-start)/1.08);
+    const depart=smooth(phase/.18);
+    const travel=smooth((phase-.18)/.44);
+    const dock=smooth((phase-.62)/.38);
+    const formation=depart*(1-dock);
     if(phase===1){
-      settled=to;
+      settled=destination.side===to.side ? destination : to;
       transfer=null;
       arrival=time;
     }
     const landing=destination.side===to.side ? destination : to;
+    const docY=mix(mix(from.docY,lane,depart),landing.docY,dock);
     return {
       x:mix(from.x,landing.x,travel),
-      y:mix(mix(from.y,landing.y,travel),laneY,formation),
-      w:mix(from.w,landing.w,travel),
+      y:docY-window.scrollY,
+      w:mix(mix(from.w,laneWidth,depart),landing.w,dock),
       rail:0,
       formation,
       direction:Math.sign(to.x-from.x)
@@ -198,28 +217,24 @@
     });
   }
 
-  function flightLane(from,to){
-    const radius=Math.min(68,Math.max(from.w,to.w)*.15);
-    const x0=Math.min(from.x,to.x)-radius;
-    const x1=Math.max(from.x,to.x)+radius;
-    const preferred=(from.y+to.y)/2-Math.min(110,height*.13);
-    const intervals=textBlocks.map(node=>node.getBoundingClientRect())
-      .filter(box=>box.right>x0 && box.left<x1 && box.bottom>0 && box.top<height)
-      .sort((a,b)=>a.top-b.top);
-    const bottom=height-radius-8;
-    let start=radius+8, winner=preferred, cost=Infinity;
-    function consider(end){
-      if(end<start) return;
-      const candidate=Math.max(start,Math.min(end,preferred));
-      const distance=Math.abs(candidate-preferred);
-      if(distance<cost){winner=candidate;cost=distance;}
+  function protectText(){
+    if(!protectedRects || protectedScroll!==window.scrollY){
+      protectedScroll=window.scrollY;
+      protectedRects=textBlocks.map(node=>node.getBoundingClientRect())
+        .filter(box=>box.width>0 && box.height>0 && box.bottom>-8 && box.top<height+8);
     }
-    for(const box of intervals){
-      consider(Math.min(bottom,box.top-radius));
-      start=Math.max(start,box.bottom+radius);
+    // Intersect the existing clip with the area outside each content block.
+    // Separate clips also cover overlapping text and transformed project rows.
+    for(const box of protectedRects){
+      const inset=8;
+      if(box.right+inset<=painted.x || box.left-inset>=painted.x+painted.w ||
+        box.bottom+inset<=painted.y || box.top-inset>=painted.y+painted.h) continue;
+      ctx.beginPath();
+      ctx.rect(-20,-20,width+40,height+40);
+      ctx.rect(Math.floor(box.left-inset),Math.floor(box.top-inset),
+        Math.ceil(box.width+2*inset+1),Math.ceil(box.height+2*inset+1));
+      ctx.clip('evenodd');
     }
-    consider(bottom);
-    return winner;
   }
 
   function wake(x,y,size,strength,direction,index){
@@ -262,6 +277,13 @@
     ctx.restore();
   }
 
+  function clearPainting(){
+    if(!painted) return;
+    ctx.setTransform(ratio,0,0,ratio,0,0);
+    ctx.clearRect(painted.x,painted.y,painted.w,painted.h);
+    painted=null;
+  }
+
   function draw(){
     if(!ready||width<2||height<2)return;
     const gentle=preference.matches;
@@ -274,14 +296,18 @@
     const energy=Math.sin(chapter.local*Math.PI)**2;
     const margin=Math.ceil(area.w*1.01+12);
     const x=Math.max(0,Math.floor(area.x-margin)), y=Math.max(0,Math.floor(area.y-margin));
+    const right=Math.min(width,Math.ceil(area.x+margin)), bottom=Math.min(height,Math.ceil(area.y+margin));
+    clearPainting();
+    paintedScroll=window.scrollY;
+    if(right<=x || bottom<=y) return;
     ctx.setTransform(ratio,0,0,ratio,0,0);
-    if(painted)ctx.clearRect(painted.x,painted.y,painted.w,painted.h);
-    painted={x,y,w:Math.min(width,Math.ceil(area.x+margin))-x,h:Math.min(height,Math.ceil(area.y+margin))-y};
+    painted={x,y,w:right-x,h:bottom-y};
     ctx.save();
     ctx.beginPath();ctx.rect(painted.x,painted.y,painted.w,painted.h);ctx.clip();
+    protectText();
     const drift=gentle ? .62 : 1;
     ctx.translate(area.x+Math.sin(t*.74)*area.w*.015*drift,area.y+Math.sin(t*.87)*area.w*.025*drift);
-    if(area.rail<.72){
+    if(area.rail<.72 && formation<.98){
       ctx.globalAlpha=1-formation*.84;
       atmosphere(area.w,t,progress,energy);
       ctx.globalAlpha=1;
@@ -337,7 +363,7 @@
     frame=0;if(document.hidden)return;
     const elapsed=now-(previous||now-41);
     const fast=Math.abs(position-target)>.001;
-    if(elapsed<(fast?14:21)){schedule();return;}
+    if(paintedScroll===window.scrollY && elapsed<(fast?14:21)){schedule();return;}
     const dt=Math.min(85,elapsed)/1000;
     previous=now;
     clock+=dt*(preference.matches ? .78 : 1);
@@ -348,8 +374,16 @@
     draw();
     schedule();
   }
-  window.addEventListener('cv-progress',e=>{if(Number.isFinite(e.detail)){target=unit(e.detail);schedule();}});
-  window.addEventListener('scroll',()=>{target=unit(scrollY/distance);schedule();},{passive:true});
+  window.addEventListener('cv-progress',e=>{
+    protectedRects=null;
+    if(Number.isFinite(e.detail)){target=unit(e.detail);schedule();}
+  });
+  window.addEventListener('scroll',()=>{
+    // Browser scrolling can expose a different text column between paints.
+    if(paintedScroll!==window.scrollY) clearPainting();
+    target=unit(scrollY/distance);
+    schedule();
+  },{passive:true});
   window.addEventListener('pointermove',e=>{
     if(preference.matches||e.pointerType==='touch')return;
     cursor.tx=Math.max(-1, Math.min(1,2*e.clientX/width-1));
