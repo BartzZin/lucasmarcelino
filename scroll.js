@@ -63,4 +63,46 @@
   printButton.hidden = false;
   printButton.addEventListener('click', () => window.print());
   schedule();
+
+  const halo = document.querySelector('#cursor-glow');
+  const canHover = matchMedia('(any-hover: hover) and (any-pointer: fine)');
+  let haloFrame = 0;
+  let x = 0, y = 0, targetX = 0, targetY = 0;
+
+  function moveHalo() {
+    haloFrame = 0;
+    const arrived = reducedMotion.matches || Math.hypot(targetX - x, targetY - y) < 0.65;
+    x = arrived ? targetX : x + (targetX - x) * .36;
+    y = arrived ? targetY : y + (targetY - y) * .36;
+    halo.style.transform = 'translate3d(' + x.toFixed(2) + 'px,' + y.toFixed(2) + 'px,0)';
+    if (!arrived) haloFrame = requestAnimationFrame(moveHalo);
+  }
+
+  function hideHalo() {
+    halo.removeAttribute('data-visible');
+    cancelAnimationFrame(haloFrame);
+    haloFrame = 0;
+  }
+
+  window.addEventListener('pointermove', event => {
+    if (event.pointerType !== 'mouse' || !canHover.matches) {
+      hideHalo();
+      return;
+    }
+    targetX = event.clientX;
+    targetY = event.clientY;
+    if (!halo.hasAttribute('data-visible')) {
+      x = targetX;
+      y = targetY;
+      moveHalo();
+      halo.setAttribute('data-visible', '');
+    } else if (!haloFrame) {
+      haloFrame = requestAnimationFrame(moveHalo);
+    }
+  }, {passive: true});
+  document.documentElement.addEventListener('pointerleave', hideHalo);
+  window.addEventListener('blur', hideHalo);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) hideHalo();
+  });
 })();
