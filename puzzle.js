@@ -36,10 +36,8 @@
     [.40,-.37,1.5],[.55,-.24,2.3],[.61,-.09,1.4],[.54,.31,3.8],[.45,.37,1.2],
     [.37,.41,1.8],[.22,.46,1.1],[-.23,.47,3.0],[-.38,.39,1.1],[-.49,.25,1.6]
   ];
-  let width=0,height=0,ratio=1,layout=[],marks=[0,1],flight=null,distance=1;
-  let target=0,position=0,clock=0,previous=0,frame=0,replay=null,paused=false,ready=false;
-  let enabled = new URLSearchParams(location.search).get('movimento')==='completo';
-  const reduced = () => preference.matches && !enabled;
+  let width=0,height=0,ratio=1,layout=[],marks=[0,1],flight=null,hero=null,distance=1;
+  let target=0,position=0,clock=0,previous=0,frame=0,ready=false;
   const cursor={x:0,y:0,tx:0,ty:0};
 
   function measure(){
@@ -49,19 +47,23 @@
     const pw=Math.round(width*ratio), ph=Math.round(height*ratio);
     if(canvas.width!==pw || canvas.height!==ph){canvas.width=pw;canvas.height=ph;}
     const sy=window.scrollY;
+    const contentBox=main.getBoundingClientRect();
+    const introBox=intro.getBoundingClientRect();
+    const heroGap=Math.max(0,contentBox.right-introBox.right);
+    hero={x:introBox.right+heroGap/2,free:heroGap,top:introBox.top+sy,h:introBox.height};
     const slot=main.querySelector('.mobile-flight')?.getBoundingClientRect();
     flight=slot&&slot.height ? {x:slot.left+slot.width/2,y:slot.top+sy+slot.height/2,w:slot.width,h:slot.height} : null;
     layout=chapters.map(section=>{
       const box=section.getBoundingClientRect();
       const content=(section.querySelector('.chapter-inner')||section).getBoundingClientRect();
-      const onLeft=(content.left+content.right)<width;
-      const free=onLeft ? width-content.right : content.left;
-      return {top:box.top+sy,bottom:box.bottom+sy,x:onLeft?width-free/2:free/2,free};
+      const onLeft=(content.left+content.right)<contentBox.left+contentBox.right;
+      const free=onLeft ? contentBox.right-content.right : content.left-contentBox.left;
+      return {top:box.top+sy,bottom:box.bottom+sy,x:onLeft?content.right+free/2:contentBox.left+free/2,free};
     });
     distance=Math.max(1,document.documentElement.scrollHeight-innerHeight);
     marks=[0];
     for(const row of layout){
-      const mark=unit((row.top-height*.46)/distance);
+      const mark=unit((row.top-Math.min(height,hero.h/.82)*.46)/distance);
       if(mark>marks.at(-1)+.028 && mark<.96) marks.push(mark);
     }
     marks.push(1);
@@ -73,25 +75,27 @@
     while(index<marks.length-2 && progress>=marks[index+1]) index++;
     return {index,local:unit((progress-marks[index])/(marks[index+1]-marks[index]))};
   }
-  function stage(still){
+  function stage(gentle){
     const sy=window.scrollY;
     if(width<=800){
       const slot=flight||{x:width*.5,y:intro.offsetHeight+80,w:width,h:160};
       const cy=slot.y-sy;
-      const rail=still ? (cy<slot.h*.38 ? 1 : 0) : smooth((height*.23+slot.h*.37-cy)/(height*.23+slot.h*.37));
-      const railY=height*(still ? .45 : .47+.23*Math.sin(target*tau*2.25-.6));
+      const rail=smooth((height*.23+slot.h*.37-cy)/(height*.23+slot.h*.37));
+      const railY=height*(.47+(gentle ? .055 : .23)*Math.sin(target*tau*2.25-.6));
       return {x:mix(slot.x,width-26,rail),y:mix(cy,railY,rail),w:mix(Math.min(slot.w*.70,slot.h*.82),39,rail),rail};
     }
-    const focus=sy+height*.46;
-    let x=width*.76,y=height*.44,w=Math.min(width*.35,height*.64,655);
+    const readingHeight=Math.min(height,hero.h/.82);
+    const focus=sy+readingHeight*.46;
+    let x=hero.x,y=Math.max(readingHeight*.24,hero.top-sy+Math.min(hero.h,readingHeight)*.49);
+    let w=Math.min(hero.free*.77,hero.h*.72,readingHeight*.66);
     for(const row of layout){
-      const blend=still ? Number(focus>=row.top) : smooth((focus-row.top+height*.19)/(height*.38));
+      const blend=smooth((focus-row.top+readingHeight*.19)/(readingHeight*.38));
       if(!blend) break;
       const local=unit((focus-row.top)/(row.bottom-row.top||1));
-      const crossing=Math.abs(row.x-x)>width*.25 ? Math.sin(Math.PI*blend) : 0;
+      const crossing=Math.abs(row.x-x)>row.free*.6 ? Math.sin(Math.PI*blend) : 0;
       x=mix(x,row.x,blend);
-      y=mix(y,height*(still ? .46 : .46+.085*Math.sin(local*tau-.32)),blend)-height*.16*crossing;
-      w=mix(w,Math.min(row.free*.69,height*.48,515),blend)*(1-.48*crossing);
+      y=mix(y,readingHeight*(.46+(gentle ? .026 : .085)*Math.sin(local*tau-.32)),blend)-readingHeight*(gentle ? .06 : .16)*crossing;
+      w=mix(w,Math.min(row.free*.69,readingHeight*.54),blend)*(1-.48*crossing);
     }
     return {x,y,w,rail:0};
   }
@@ -142,36 +146,38 @@
 
   function draw(){
     if(!ready||width<2||height<2)return;
-    const still=reduced();
-    const progress=still ? target : position;
-    const chapter=chapterAt(progress), area=stage(still);
-    const t=still ? 0 : clock;
+    const gentle=preference.matches;
+    const progress=position;
+    const chapter=chapterAt(progress), area=stage(gentle);
+    const t=clock;
     const ending=1-smooth((progress-.85)/.14);
-    const stageRatio=chapter.index/(marks.length-1);
-    const fixedOpen=progress>=.97 ? 0 : (chapter.index===0?0:Math.sin(stageRatio*Math.PI)*.37);
     ctx.setTransform(ratio,0,0,ratio,0,0);ctx.clearRect(0,0,width,height);
     ctx.save();
-    ctx.translate(area.x+(still?0:Math.sin(t*.48)*area.w*.004),area.y+(still?0:Math.sin(t*.65)*area.w*.006));
+    const drift=gentle ? .15 : 1;
+    ctx.translate(area.x+Math.sin(t*.48)*area.w*.004*drift,area.y+Math.sin(t*.65)*area.w*.006*drift);
     if(area.rail<.72)atmosphere(area.w,t,progress);
-    const groupTurn=still ? 0 : (.041*Math.sin(t*.68)+cursor.x*.035+cursor.y*.012)*Math.sin(progress*Math.PI)+.061*Math.sin(progress*tau);
+    const pointerTurn=gentle ? 0 : cursor.x*.035+cursor.y*.012;
+    const groupTurn=(.041*Math.sin(t*.68)*drift+pointerTurn)*Math.sin(progress*Math.PI)+.061*Math.sin(progress*tau)*drift;
     ctx.rotate(groupTurn);
     // Each layer travels out from its own center. A fresh chapter starts with
     // the original alignment, opens, and then brings the four cuts together.
     art.forEach((p,i)=>{
       const beat=unit((chapter.local-i*.037)/(.87-i*.037));
-      const chapterOpen=Math.sin(beat*Math.PI)**2*ending;
-      let open=still?fixedOpen:chapterOpen;
-      if(replay!==null && !still) open=replay.open;
+      const open=Math.sin(beat*Math.PI)**2*ending*(gentle ? .35 : 1);
       // The pieces remain separate, including at either end of the journey.
       // Each follows its own breathing cycle even when reading has stopped.
-      const breath=still ? 0 : (.5-.5*Math.cos(t*(.83+i*.056)+i*.70));
-      const spread=.115+.24*breath+.68*open;
-      const idle=still ? 0 : Math.sin(t*.93+i*1.71)*(.006+.009*open);
+      const breath=(.5-.5*Math.cos(t*(.83+i*.056)+i*.70));
+      const spread=.115+(gentle ? .095 : .24)*breath+.68*open;
+      const idle=Math.sin(t*.93+i*1.71)*(.006+.009*open)*(gentle ? .28 : 1);
       const ox=p.cx*(1+spread)+Math.cos(i*1.85+t*.43)*.022*open;
-      const oy=p.cy*(1+spread)+idle;
-      const turn=p.turn*(.08+.29*breath+open*(1+.26*Math.sin(chapter.index+i)));
+      // The upper socket releases vertically before the left tab turns.
+      const oy=p.cy*(1+spread)+idle-(i===0 ? .050 : 0);
+      const turn=p.turn*(.08+.29*breath+open*(1+.26*Math.sin(chapter.index+i)))*(gentle ? .34 : 1);
       const fit=1-.25*open;
-      const dw=p.width*area.w*fit,dh=p.height*area.w*fit;
+      // Insets keep the glossy tabs clear of neighbouring sockets even when
+      // the independently rotating silhouettes cross in projection.
+      const inset=.92-.075*open;
+      const dw=p.width*area.w*fit*inset,dh=p.height*area.w*fit*inset;
       ctx.save();
       ctx.translate(area.w*ox*fit,area.w*oy*fit);
       ctx.rotate(turn);
@@ -185,49 +191,29 @@
   }
   function tick(now){
     frame=0;if(document.hidden)return;
-    const active=!reduced()&&!paused;
     const elapsed=now-(previous||now-41);
-    const fast=replay!==null||Math.abs(position-target)>.001;
-    if(active&&elapsed<(fast?14:39)){schedule();return;}
+    const fast=Math.abs(position-target)>.001;
+    if(elapsed<(fast?14:39)){schedule();return;}
     const dt=Math.min(85,elapsed)/1000;
     previous=now;
-    if(active){
-      clock+=dt;
-      position+= (target-position)*(1-Math.exp(-dt*16));
-      if(Math.abs(position-target)<.0004)position=target;
-      const smoothPointer=1-Math.exp(-dt*7);
-      cursor.x=mix(cursor.x,cursor.tx,smoothPointer);cursor.y=mix(cursor.y,cursor.ty,smoothPointer);
-      if(replay!==null){
-        replay.time+=dt;
-        const s=replay.time;
-        if(s<1.85) replay.open=mix(replay.from,1,smooth(s/1.85));
-        else if(s<2.15) replay.open=1;
-        else if(s<5.4) replay.open=1-smooth((s-2.15)/3.25);
-        else if(s<6.1) replay.open=0;
-        else if(s<7.1) replay.open=smooth((s-6.1))*Math.sin(Math.PI*chapterAt(position).local)**2;
-        else replay=null;
-      }
-    }
+    clock+=dt*(preference.matches ? .49 : 1);
+    position+=(target-position)*(1-Math.exp(-dt*16));
+    if(Math.abs(position-target)<.0004)position=target;
+    const smoothPointer=1-Math.exp(-dt*7);
+    cursor.x=mix(cursor.x,cursor.tx,smoothPointer);cursor.y=mix(cursor.y,cursor.ty,smoothPointer);
     draw();
-    if(active)schedule();
+    schedule();
   }
   window.addEventListener('cv-progress',e=>{if(Number.isFinite(e.detail)){target=unit(e.detail);schedule();}});
   window.addEventListener('scroll',()=>{target=unit(scrollY/distance);schedule();},{passive:true});
-  window.addEventListener('cv-pause',e=>{paused=e.detail===true;previous=0;schedule();});
-  window.addEventListener('cv-enable',()=>{enabled=true;previous=0;schedule();});
-  window.addEventListener('cv-replay',()=>{
-    if(reduced())return;
-    replay={time:0,open:0,from:Math.sin(chapterAt(position).local*Math.PI)**2};
-    paused=false;previous=0;schedule();
-  });
   window.addEventListener('pointermove',e=>{
-    if(paused||reduced()||e.pointerType==='touch')return;
+    if(preference.matches||e.pointerType==='touch')return;
     cursor.tx=Math.max(-1, Math.min(1,2*e.clientX/width-1));
     cursor.ty=Math.max(-1, Math.min(1,2*e.clientY/height-1));
   },{passive:true});
   document.addEventListener('pointerleave',()=>{cursor.tx=cursor.ty=0;});
   document.addEventListener('visibilitychange',()=>{if(frame)cancelAnimationFrame(frame);frame=0;previous=0;schedule();});
-  preference.addEventListener('change',()=>{enabled=false;replay=null;previous=0;schedule();});
+  preference.addEventListener('change',()=>{previous=0;schedule();});
   window.addEventListener('resize',measure,{passive:true});
   if(window.ResizeObserver)new ResizeObserver(measure).observe(main);
   document.fonts?.ready.then(measure);

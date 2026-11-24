@@ -6,11 +6,6 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const clamp = n => Math.max(0, Math.min(1, n));
   let pending = false;
-  let paused = false;
-  // The motion preview opens with the full choreography. The standard URL
-  // follows the visitor's system preference.
-  let optedIn = new URLSearchParams(location.search).get('movimento') === 'completo';
-  if (optedIn) window.dispatchEvent(new Event('cv-enable'));
 
   function render() {
     pending = false;
@@ -18,7 +13,7 @@
     const distance = document.documentElement.scrollHeight - viewport;
     const progress = distance > 0 ? clamp(window.scrollY / distance) : 1;
     window.dispatchEvent(new CustomEvent('cv-progress', {detail: progress}));
-    const motion = !paused && (!reducedMotion.matches || optedIn);
+    const motion = !reducedMotion.matches;
     const bounds = chapters.map(chapter => chapter.getBoundingClientRect());
     const tops = pieces.map(piece => piece.offsetTop + piece.offsetParent.getBoundingClientRect().top);
     root.style.setProperty('--read', progress.toFixed(4));
@@ -49,43 +44,6 @@
   window.addEventListener('resize', schedule);
   reducedMotion.addEventListener('change', schedule);
   const printButton = document.querySelector('#print');
-  const replay = document.querySelector('#replay');
-  const pause = document.querySelector('#pause');
-  const setReplayVisibility = () => {
-    const needsActivation = reducedMotion.matches && !optedIn;
-    replay.hidden = false;
-    replay.textContent = needsActivation ? '▷ Ativar animação' : '▷ Reproduzir montagem';
-    pause.hidden = needsActivation;
-    replay.disabled = paused;
-  };
-  pause.addEventListener('click', () => {
-    paused = !paused;
-    const label = paused ? 'Retomar animação' : 'Pausar animação';
-    pause.textContent = paused ? '▷' : 'Ⅱ';
-    pause.setAttribute('aria-label', label);
-    pause.title = label;
-    window.dispatchEvent(new CustomEvent('cv-pause', {detail:paused}));
-    setReplayVisibility();
-    schedule();
-  });
-  setReplayVisibility();
-  reducedMotion.addEventListener('change', () => {
-    optedIn = false;
-    paused = false;
-    pause.textContent = 'Ⅱ';
-    pause.title = 'Pausar animação';
-    pause.setAttribute('aria-label', pause.title);
-    window.dispatchEvent(new CustomEvent('cv-pause', {detail:false}));
-    setReplayVisibility();
-  });
-  replay.addEventListener('click', () => {
-    if (reducedMotion.matches && !optedIn) {
-      optedIn = true;
-      window.dispatchEvent(new Event('cv-enable'));
-      setReplayVisibility();
-    }
-    window.dispatchEvent(new Event('cv-replay'));
-  });
   printButton.hidden = false;
   printButton.addEventListener('click', () => window.print());
   schedule();
