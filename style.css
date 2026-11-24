@@ -60,7 +60,7 @@ body {
 @media screen and (min-width:1800px) {
   :root { font-size: clamp(16px, .93vw, 28px); }
   body .intro { min-height: min(82vh,58vw); }
-  body h1 { font-size: clamp(158px,8.8vw,420px); }
+  body h1 { font-size: clamp(128px,7.1vw,300px); }
   body .intro p { font-size: clamp(30px,1.68vw,60px); }
   body h2 { font-size: clamp(83px,4.6vw,160px); }
   body h3 { font-size: clamp(36px,2vw,65px); }
@@ -106,7 +106,7 @@ a:hover, button:hover { color: var(--accent); text-decoration: underline; text-u
 .bar nav a:is(:hover,:focus-visible) svg { color: var(--accent); }
 .intro { width: 60%; min-height: min(82vh,830px); display: flex; flex-direction: column; justify-content: center; align-items: flex-start; padding: clamp(34px,5vw,96px) 0; }
 h1, h2, h3, p { margin: 0; }
-h1 { font-size: clamp(78px,9.35vw,174px); font-weight: 1000; line-height: .92; letter-spacing: -.053em; }
+h1 { font-size: clamp(60px,7.12vw,128px); font-weight: 1000; line-height: .92; letter-spacing: -.053em; }
 h1 span, h1 em { display: block; }
 h1 .water-text { width: fit-content; }
 h1 span:nth-child(2) { color: var(--violet); }
@@ -216,7 +216,7 @@ footer {
 @media(max-width:800px) {
   .bar { padding-top: 16px; font-size: 15px; }
   .intro { width: 100%; min-height: auto; padding: 37px 0 0; }
-  h1 { font-size: clamp(50px,16.6vw,122px); }
+  h1 { font-size: clamp(45px,14.8vw,107px); }
   .intro p { margin: 18px 0; }.actions { gap: 9px; }
   .mobile-flight { display: block; height: clamp(195px,38svh,348px); }
   .story section { padding: 43px 0; }
