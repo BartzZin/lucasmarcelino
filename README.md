@@ -7,8 +7,8 @@ Página pessoal em português com experiência, formação e projetos. [Acessar 
 | Etapa | Decisão e critério de aceite |
 | --- | --- |
 | Selecionar o conteúdo | Usar o LinkedIn para experiência e formação. Vincular cada projeto ao repositório que demonstra o trabalho. |
-| Organizar a leitura | Abrir com nome e atuação na Consisa Sistemas. Apresentar trajetória, projetos com tecnologias e resultados, e contato profissional. |
-| Construir a interação | Modelar quatro peças com curvas complementares, espessura e iluminação. Vincular posição e rotação à distância percorrida na página. Ao voltar ao topo, desfazer os encaixes na ordem inversa. |
+| Organizar a leitura | Abrir com nome e atuação na Consisa Sistemas. Apresentar trajetória, tecnologias, projetos e arquivo cronológico de 2023 a 2026. Encerrar com contato direto pelo WhatsApp. |
+| Construir a interação | Modelar quatro peças com curvas complementares, espessura e iluminação. Vincular câmera e encaixes à distância percorrida na página. Acrescentar levitação, reflexos de encaixe, entrada progressiva do texto e replay independente da rolagem. |
 | Adaptar e testar | Manter o modelo ao lado do texto no desktop e em uma faixa compacta no celular. Testar âncoras, leitura por teclado, impressão, estado final e preferência por movimento reduzido. |
 | Publicar e manter | Servir arquivos estáticos pelo GitHub Pages a partir da raiz da branch main. Conferir a URL pública e revisar o currículo quando houver mudança profissional ou novo projeto representativo. |
 
