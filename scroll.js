@@ -113,6 +113,13 @@
   printButton.addEventListener('click', () => window.print());
   schedule();
 
+  if(window.IntersectionObserver){
+    const flowObserver=new IntersectionObserver(entries=>{
+      for(const entry of entries) entry.target.toggleAttribute('data-flow-active',entry.isIntersecting);
+    });
+    document.querySelectorAll('.water-text').forEach(node=>flowObserver.observe(node));
+  }
+
   const halo = document.querySelector('#cursor-glow');
   const canHover = matchMedia('(any-hover: hover) and (any-pointer: fine)');
   let haloFrame = 0;
