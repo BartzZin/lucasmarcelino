@@ -7,7 +7,7 @@
   <meta name="description" content="Currículo de Lucas Marcelino Lara, desenvolvedor e analista de sistemas na Consisa Sistemas. Conheça seus projetos em documentos fiscais, integrações, Delphi e aprendizado de máquina.">
   <title>Lucas Marcelino Lara · Desenvolvimento de sistemas</title>
   <link rel="preload" href="./fontes/nunito.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="./style.css?v=fluxo">
+  <link rel="stylesheet" href="./style.css?v=botoes">
   <script src="./particles.js?v=particulas" defer></script>
   <script src="./puzzle.js?v=movimento-lateral" defer></script>
   <script src="./scroll.js?v=fluxo" defer></script>
@@ -18,13 +18,33 @@
   <div id="cursor-glow" aria-hidden="true"></div>
   <canvas id="puzzle" aria-hidden="true"></canvas>
   <header class="bar">
-    <nav aria-label="Navegação principal"><a href="#trajetoria"><span class="water-text">Trajetória</span></a><a href="#projetos"><span class="water-text">Projetos</span></a><a href="#contato"><span class="water-text">Contato</span></a></nav>
+    <nav aria-label="Navegação principal">
+      <a href="#trajetoria">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h6a3 3 0 0 1 0 6h-4a3 3 0 0 0 0 6h6"/></svg>
+        <span class="water-text">Trajetória</span>
+      </a>
+      <a href="#projetos">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
+        <span class="water-text">Projetos</span>
+      </a>
+      <a href="#contato">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5h-1L5 21l1.6-4.1A7.5 7.5 0 1 1 20 11.5Z"/><path d="M9 11.5h7"/></svg>
+        <span class="water-text">Contato</span>
+      </a>
+    </nav>
   </header>
   <main id="principal">
     <section class="intro" aria-labelledby="nome">
       <h1 id="nome"><span class="water-text">Lucas</span> <span>Marcelino</span> <em>Lara.</em></h1>
       <p>Desenvolvedor e analista de sistemas na Consisa Sistemas.</p>
-      <div class="actions"><a class="explore" href="#trajetoria">Explorar trajetória ↓</a></div>
+      <div class="actions">
+        <a class="explore" href="#trajetoria">
+          <span>Explorar trajetória</span>
+          <span class="explore-icon" aria-hidden="true">
+            <svg focusable="false" viewBox="0 0 24 24"><path d="M12 4v15m-6-6 6 6 6-6"/></svg>
+          </span>
+        </a>
+      </div>
     </section>
     <div class="mobile-flight" aria-hidden="true"></div>
     <div class="story">
