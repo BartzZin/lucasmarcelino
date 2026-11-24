@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10101a">
+  <meta name="description" content="Currículo de Lucas Marcelino Lara, desenvolvedor e analista de sistemas na Consisa Sistemas. Conheça sua trajetória e projetos em Delphi, Python e aprendizado de máquina.">
+  <title>Lucas Marcelino Lara · Desenvolvimento de sistemas</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./puzzle.js" defer></script>
+  <script src="./scroll.js" defer></script>
+</head>
+<body id="inicio">
+  <a class="skip" href="#principal">Pular para o currículo</a>
+  <header class="bar">
+    <a class="identity" href="#inicio" aria-label="Lucas Marcelino Lara, início"><b>LML</b><span> / Lucas Marcelino Lara</span></a>
+    <nav aria-label="Navegação principal"><a href="#trajetoria">Trajetória</a><a href="#projetos">Projetos</a><a href="https://www.linkedin.com/in/lucas-marcelino-000327238/">LinkedIn ↗</a></nav>
+  </header>
+  <main id="principal">
+    <section class="intro" aria-labelledby="nome">
+      <h1 id="nome">Lucas<br><span>Marcelino Lara.</span></h1>
+      <p>Desenvolvedor e analista de sistemas na Consisa Sistemas.</p>
+      <a class="explore" href="#trajetoria">Explorar trajetória <span aria-hidden="true">↓</span></a>
+    </section>
+    <aside class="model" aria-hidden="true"><canvas id="puzzle"></canvas></aside>
+    <div class="story">
+      <section id="trajetoria">
+        <h2>Trajetória</h2>
+        <article class="piece"><small>Experiência</small><h3>Consisa Sistemas</h3><p>Atuo com desenvolvimento e análise de sistemas em Francisco Beltrão, Paraná.</p></article>
+        <article class="piece"><small>Formação</small><h3>UNIPAR</h3><p>Sou tecnólogo em Sistemas pela Universidade Paranaense.</p></article>
+        <article class="piece"><small>Pós-graduação · Projetos acadêmicos</small><h3>UTFPR</h3><p>Nos estudos de aprendizado de máquina, implemento redes neurais e comparo o desempenho dos modelos em experimentos com Python.</p></article>
+      </section>
+      <section id="projetos">
+        <h2>Projetos</h2>
+        <article class="piece"><small>Delphi 12 · FastAPI · SQLite</small><h3><a href="https://github.com/BartzZin/ProjetoIntegrador">AutoSom Diagnóstico <span aria-hidden="true">↗</span></a></h3><p>Construí uma aplicação desktop que envia gravações de motores a uma API em Python. O modelo distingue sons normais de anomalias acústicas, e o aplicativo salva o resultado no histórico local.</p></article>
+        <article class="piece"><small>Python · scikit-learn</small><h3><a href="https://github.com/BartzZin/AnaliseDEEPLearning">Rede neural multicamadas <span aria-hidden="true">↗</span></a></h3><p>Comparei o efeito da normalização, da taxa de aprendizado e da quantidade de neurônios em um classificador. Avaliei os resultados com validação cruzada e exportei as métricas em CSV.</p></article>
+        <article class="piece"><small>Python · Classificação binária</small><h3><a href="https://github.com/BartzZin/ProjetoDeepLearning">Treinamento de um Perceptron <span aria-hidden="true">↗</span></a></h3><p>Implementei um treinamento por épocas para acompanhar como o classificador aprende, com uma interface gráfica para explorar o experimento.</p></article>
+      </section>
+      <section id="contato">
+        <h2>Contato</h2>
+        <div class="links"><a href="https://www.linkedin.com/in/lucas-marcelino-000327238/">Conversar no LinkedIn ↗</a><a href="https://github.com/BartzZin">Perfil no GitHub ↗</a></div>
+      </section>
+    </div>
+  </main>
+  <footer><span>Lucas Marcelino Lara</span><button type="button" id="print" hidden>Imprimir currículo</button><a href="#inicio">Voltar ao início ↑</a></footer>
+</body>
+</html>
