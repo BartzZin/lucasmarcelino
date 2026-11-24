@@ -30,6 +30,8 @@
     p.cx=(p.x+p.w/2-midX)/artWidth; p.cy=(p.y+p.h/2-midY)/artWidth;
     p.width=p.w/artWidth; p.height=p.h/artWidth;
   }
+  const queue = art.slice().sort((a,b)=>a.cx-b.cx);
+  queue.forEach((piece,index)=>{piece.lane=index-1.5;});
 
   const stars = [
     [-.52,-.26,4.1],[-.42,-.31,1.5],[-.35,-.43,2.4],[-.31,-.46,1.1],[-.17,-.53,1.5],
@@ -39,12 +41,16 @@
   let width=0,height=0,ratio=1,layout=[],marks=[0,1],flight=null,hero=null,distance=1;
   let target=0,position=0,clock=0,previous=0,frame=0,ready=false;
   let painted=null;
+  let settled=null, transfer=null, arrival=-Infinity;
   const cursor={x:0,y:0,tx:0,ty:0};
 
   function measure(){
     const bounds=canvas.getBoundingClientRect();
     width=bounds.width;height=bounds.height;ratio=Math.min(2,devicePixelRatio||1);
     if (!width || !height) return;
+    settled=null;
+    transfer=null;
+    arrival=-Infinity;
     ratio=Math.min(ratio,Math.sqrt(7_000_000/(width*height)));
     const pw=Math.round(width*ratio), ph=Math.round(height*ratio);
     if(canvas.width!==pw || canvas.height!==ph){canvas.width=pw;canvas.height=ph;painted=null;}
@@ -90,18 +96,50 @@
     const focus=sy+readingHeight*.46;
     let x=hero.x,y=Math.max(readingHeight*.24,hero.top-sy+Math.min(hero.h,readingHeight)*.49);
     let w=Math.min(hero.free*.78,hero.h*.72,readingHeight*.66);
-    let opacity=1;
+    let side=1;
     for(const row of layout){
       const blend=smooth((focus-row.top+readingHeight*.19)/(readingHeight*.38));
       if(!blend) break;
       const local=unit((focus-row.top)/(row.bottom-row.top||1));
-      const crossing=Math.abs(row.x-x)>row.free*.6 ? Math.sin(Math.PI*blend) : 0;
-      x=mix(x,row.x,blend);
-      y=mix(y,readingHeight*(.46+(gentle ? .026 : .085)*Math.sin(local*tau-.32)),blend)-readingHeight*(gentle ? .06 : .16)*crossing;
-      w=mix(w,Math.min(row.free*.69,readingHeight*.54),blend)*(1-.48*crossing);
-      opacity*=1-.56*crossing;
+      const nextSide=row.x>=width*.5 ? 1 : -1;
+      if(nextSide!==side && blend<.5) break;
+      const step=nextSide===side ? blend : 1;
+      x=mix(x,row.x,step);
+      y=mix(y,readingHeight*(.46+(gentle ? .026 : .085)*Math.sin(local*tau-.32)),step);
+      w=mix(w,Math.min(row.free*.69,readingHeight*.54),step);
+      side=nextSide;
     }
-    return {x,y,w,rail:0,opacity};
+    return {x,y,w,rail:0,side};
+  }
+
+  function travelingStage(destination,time){
+    if(destination.rail>0 || destination.side===undefined) return destination;
+    settled??=destination;
+    if(!transfer && settled.side!==destination.side){
+      transfer={start:time,from:settled,to:destination};
+    }
+    if(!transfer){
+      settled=destination;
+      return destination;
+    }
+    const {from,to,start}=transfer;
+    const phase=unit((time-start)/1.22);
+    const travel=smooth((phase-.18)/.64);
+    const formation=smooth(phase/.26)*(1-smooth((phase-.73)/.27));
+    if(phase===1){
+      settled=to;
+      transfer=null;
+      arrival=time;
+    }
+    const landing=destination.side===to.side ? destination : to;
+    return {
+      x:mix(from.x,landing.x,travel),
+      y:mix(from.y,landing.y,travel)-Math.min(110,height*.13)*formation,
+      w:mix(from.w,landing.w,travel),
+      rail:0,
+      formation,
+      direction:Math.sign(to.x-from.x)
+    };
   }
   function star(x,y,r,color,glow){
     const halo=ctx.createRadialGradient(x,y,0,x,y,r*4);
@@ -151,12 +189,55 @@
     });
   }
 
+  function wake(x,y,size,strength,direction,index){
+    const color=index%2===0 ? '217,161,255' : '173,255,207';
+    const tail=direction*size*.40;
+    const light=ctx.createLinearGradient(x-tail,y,x,y);
+    light.addColorStop(0,'rgba('+color+',0)');
+    light.addColorStop(.74,'rgba('+color+','+strength*.38+')');
+    light.addColorStop(1,'rgba('+color+','+strength*.84+')');
+    ctx.strokeStyle=light;
+    ctx.lineWidth=Math.max(1,size*.006);
+    for(let band=0;band<2;band++){
+      const vertical=(band-.5)*size*.023;
+      ctx.beginPath();
+      ctx.moveTo(x-tail,y+vertical+size*.043);
+      ctx.quadraticCurveTo(x-tail*.44,y+vertical-size*.032,x,y+vertical);
+      ctx.stroke();
+    }
+    star(x-tail*.63,y+size*.013,Math.max(1,size*.006),color,strength*.72);
+  }
+
+  function arrivalGlow(size,elapsed){
+    const phase=unit(elapsed/.64);
+    const glow=(1-phase)**2;
+    ctx.save();
+    ctx.rotate(-.24);
+    for(let ring=0;ring<2;ring++){
+      const radius=size*(.19+.35*smooth(phase)+ring*.074);
+      ctx.beginPath();
+      ctx.ellipse(0,0,radius,radius*.48,0,0,tau);
+      ctx.strokeStyle=ring ? 'rgba(173,255,207,'+glow*.60+')' : 'rgba(217,161,255,'+glow*.82+')';
+      ctx.lineWidth=Math.max(1,size*.008*glow);
+      ctx.stroke();
+    }
+    for(let i=0;i<8;i++){
+      const angle=i*tau/8+.4;
+      const radius=size*(.16+.44*smooth(phase));
+      star(Math.cos(angle)*radius,Math.sin(angle)*radius*.58,Math.max(1.2,size*.009),i%2?'173,255,207':'217,161,255',glow);
+    }
+    ctx.restore();
+  }
+
   function draw(){
     if(!ready||width<2||height<2)return;
     const gentle=preference.matches;
     const progress=position;
-    const chapter=chapterAt(progress), area=stage(gentle);
     const t=clock;
+    const chapter=chapterAt(progress), area=travelingStage(stage(gentle),t);
+    const formation=area.formation??0;
+    const landed=t-arrival;
+    const orbiting=(1-smooth(formation*4))*smooth(landed/.80);
     const energy=Math.sin(chapter.local*Math.PI)**2;
     const margin=Math.ceil(area.w*1.01+12);
     const x=Math.max(0,Math.floor(area.x-margin)), y=Math.max(0,Math.floor(area.y-margin));
@@ -165,22 +246,26 @@
     painted={x,y,w:Math.min(width,Math.ceil(area.x+margin))-x,h:Math.min(height,Math.ceil(area.y+margin))-y};
     ctx.save();
     ctx.beginPath();ctx.rect(painted.x,painted.y,painted.w,painted.h);ctx.clip();
-    ctx.globalAlpha=area.opacity??1;
     const drift=gentle ? .62 : 1;
     ctx.translate(area.x+Math.sin(t*.74)*area.w*.015*drift,area.y+Math.sin(t*.87)*area.w*.025*drift);
-    if(area.rail<.72)atmosphere(area.w,t,progress,energy);
+    if(area.rail<.72){
+      ctx.globalAlpha=1-formation*.84;
+      atmosphere(area.w,t,progress,energy);
+      ctx.globalAlpha=1;
+    }
+    if(landed<.64)arrivalGlow(area.w,landed);
     const pointerTurn=gentle ? 0 : cursor.x*.035+cursor.y*.012;
     const groupTurn=(.09*Math.sin(t*.84)*drift+pointerTurn)*Math.sin(progress*Math.PI)+.13*Math.sin(progress*tau)*drift;
-    ctx.rotate(groupTurn);
+    ctx.rotate(groupTurn*(1-formation));
     // Each layer travels out from its own center. A fresh chapter starts with
     // the original alignment, opens, and then brings the four cuts together.
-    art.forEach((p,i)=>{
+    const poses=art.map((p,i)=>{
       const beat=unit((chapter.local-i*.037)/(.87-i*.037));
-      const open=Math.sin(beat*Math.PI)**2*(gentle ? .68 : 1);
+      const open=Math.sin(beat*Math.PI)**2*(gentle ? .68 : 1)*orbiting;
       // The pieces remain separate, including at either end of the journey.
       // Each follows its own breathing cycle even when reading has stopped.
       const breath=(.5-.5*Math.cos(t*(1.38+i*.094)+i*.64));
-      const spread=.12+(.33*breath+1.03*open)*drift;
+      const spread=.12+(.33*breath+1.03*open)*drift*mix(.36,1,orbiting);
       const idle=Math.sin(t*1.47+i*1.71)*(.016+.032*open)*drift;
       const ox=p.cx*(1+spread)+Math.cos(i*1.85+t*.74)*.044*open;
       // The upper socket releases vertically before the left tab turns.
@@ -190,13 +275,26 @@
       // Insets keep the glossy tabs clear of neighbouring sockets even when
       // the independently rotating silhouettes cross in projection.
       const inset=.92-.09*open;
-      const dw=p.width*area.w*fit*inset,dh=p.height*area.w*fit*inset;
-      ctx.save();
-      ctx.translate(area.w*ox*fit,area.w*oy*fit);
-      ctx.rotate(turn);
-      ctx.drawImage(p.image,-dw/2,-dh/2,dw,dh);
-      ctx.restore();
+      const scale=area.w*mix(fit*inset,.41,formation);
+      const bob=Math.sin(t*6-p.lane*1.6);
+      return {
+        image:p.image,
+        x:area.w*mix(ox*fit,p.lane*.27,formation),
+        y:area.w*mix(oy*fit,bob*.018,formation),
+        turn:mix(turn,(area.direction??0)*(.22+bob*.12),formation),
+        w:p.width*scale,h:p.height*scale
+      };
     });
+    if(formation>.01){
+      poses.forEach((p,i)=>wake(p.x,p.y,area.w,formation,area.direction,i));
+    }
+    for(const p of poses){
+      ctx.save();
+      ctx.translate(p.x,p.y);
+      ctx.rotate(p.turn);
+      ctx.drawImage(p.image,-p.w/2,-p.h/2,p.w,p.h);
+      ctx.restore();
+    }
     ctx.restore();
   }
   function schedule(){
