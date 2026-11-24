@@ -2,10 +2,13 @@
   const pieces = [...document.querySelectorAll('.piece')];
   const chapters = [...document.querySelectorAll('.story section')];
   const hero = document.querySelector('.intro');
+  const archive = document.querySelector('.archive');
+  const milestones = [...archive.querySelectorAll('time')];
   const root = document.documentElement;
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const clamp = n => Math.max(0, Math.min(1, n));
   let pending = false;
+  let activeMilestone = null;
 
   function render() {
     pending = false;
@@ -16,15 +19,28 @@
     const motion = !reducedMotion.matches;
     const bounds = chapters.map(chapter => chapter.getBoundingClientRect());
     const tops = pieces.map(piece => piece.offsetTop + piece.offsetParent.getBoundingClientRect().top);
+    const archiveBox = archive.getBoundingClientRect();
+    const readingLine = viewport * .64;
+    let marker = null;
+    if (archiveBox.top <= readingLine && archiveBox.bottom > 0) {
+      for (const date of milestones) {
+        if (date.getBoundingClientRect().top > readingLine) break;
+        marker = date;
+      }
+    }
+    if (marker !== activeMilestone) {
+      activeMilestone?.parentElement.removeAttribute('aria-current');
+      marker?.parentElement.setAttribute('aria-current', 'step');
+      activeMilestone = marker;
+    }
+    archive.style.setProperty('--timeline-read', clamp((readingLine - archiveBox.top) / archiveBox.height).toFixed(4));
     root.style.setProperty('--read', progress.toFixed(4));
     hero.style.setProperty('--hero-exit', motion ? clamp(scrollY / viewport).toFixed(3) : 0);
     chapters.forEach((chapter, index) => {
       const box = bounds[index];
       const arrival = clamp((viewport - box.top) / (viewport * .49));
-      const read = clamp((viewport * .75 - box.top) / Math.max(1, box.height));
       chapter.style.setProperty('--arrive', motion ? arrival.toFixed(3) : 1);
       chapter.style.setProperty('--unread', motion ? (1 - arrival).toFixed(3) : 0);
-      chapter.style.setProperty('--chapter-read', read.toFixed(3));
     });
     pieces.forEach((piece, i) => {
       const entering = motion ? clamp((tops[i] - viewport * .56) / (viewport * .47)) : 0;
