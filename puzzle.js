@@ -133,6 +133,15 @@
     rail: 0,
     initialized: false
   };
+  const scrollCommit = {
+    lastSy: -1,
+    lastMoveDir: 1,
+    idleTime: 0,
+    active: false,
+    corridorIndex: -1,
+    committedS: 0,
+    anchorSy: 0
+  };
   const paintedRect = { x: 0, y: 0, w: 0, h: 0, active: false };
 
   // Pre-allocated live viewport obstacle boxes
@@ -546,6 +555,9 @@
 
     buildCorridors();
 
+    scrollCommit.active = false;
+    scrollCommit.corridorIndex = -1;
+
     target = unit(sy / distance);
     schedule();
   }
@@ -677,9 +689,14 @@
         }
 
         const gapH = Math.max(64, c.gapBottom - c.gapTop);
-        // Horizontal flight stream vertical total height is ~0.26*w -> fits effortlessly inside gapH
-        const corridorW = Math.min(startW, Math.max(endW, 130), (gapH - 54) / .38, 224);
-        const streamHalfH = corridorW * .16 + 18;
+        // Size crossing pieces directly from actual open gapH & side-lane width (bold, clear, zero clumping)
+        const startLaneW = prev ? prev.usableW : hero.usableW;
+        const endLaneW = next.isContact ? (width - EDGE_PAD * 2) : next.usableW;
+        const maxHorizW = Math.max(120, (Math.min(startLaneW, endLaneW) * .5 - 12) / 1.02);
+        const maxGapW = Math.max(110, (gapH - 40) / .56);
+        const corridorCap = Math.min(268, readingHeight * .34);
+        const corridorW = Math.min(maxGapW, maxHorizW, corridorCap);
+        const streamHalfH = corridorW * .28 + 20;
         const gapMinDocY = c.gapTop + streamHalfH;
         const gapMaxDocY = Math.max(gapMinDocY, c.gapBottom - streamHalfH);
         const safeMinDocY = Math.max(gapMinDocY, sy + headerSafeBottom + streamHalfH);
@@ -695,16 +712,16 @@
         out.direction = dir;
         out.rail = 0;
 
-        if (u < .16) {
-          const p1 = smooth(u / .16);
+        if (u < .20) {
+          const p1 = smooth(u / .20);
           out.x = startX;
           out.docY = mix(startDocY, lockedDocY, p1);
           out.w = mix(startW, corridorW, p1);
           out.formation = p1;
           out.contact = 0;
           out.inCorridor = p1 > .25;
-        } else if (u <= .84) {
-          const p2 = smooth((u - .16) / .68);
+        } else if (u <= .80) {
+          const p2 = smooth((u - .20) / .60);
           out.x = mix(startX, endX, p2);
           out.docY = lockedDocY;
           out.w = corridorW;
@@ -712,7 +729,7 @@
           out.contact = next.isContact ? p2 * .5 : 0;
           out.inCorridor = true;
         } else {
-          const p3 = smooth((u - .84) / .16);
+          const p3 = smooth((u - .80) / .20);
           out.x = endX;
           out.docY = mix(lockedDocY, endDocY, p3);
           out.w = mix(corridorW, endW, p3);
@@ -753,12 +770,24 @@
         const maxDoc = Math.max(minDoc, next.contentBottom - 32);
         let docY = clamp(s + wave, minDoc, maxDoc);
 
-        // Keep comfortably inside visible vertical viewport bounds (clear of header & cinema HUD)
+        // Keep comfortably inside visible vertical viewport bounds AND clear of opposite-side chapters above/below
         const halfH = next.laneW * .66 + 12;
+        const laneCeil = (prev && prev.side !== next.side) ? (c.gapTop + halfH) : (hero.docTop + halfH);
+        const nextCorr = k < corridors.length - 1 ? corridors[k + 1] : null;
+        const nextChap = k < layout.length - 1 ? layout[k + 1] : null;
+        const laneFloor = (nextCorr && nextChap && nextChap.side !== next.side)
+          ? (nextCorr.gapBottom - halfH)
+          : maxDoc;
         const visMin = sy + headerSafeBottom + halfH;
         const visMax = sy + hudTop - halfH;
-        if (visMax > visMin) {
-          docY = clamp(docY, Math.max(minDoc, visMin), Math.min(maxDoc, visMax));
+        const lo = Math.max(laneCeil, visMin);
+        const hi = Math.min(laneFloor, visMax);
+        if (hi >= lo) {
+          docY = clamp(docY, lo, hi);
+        } else {
+          const physLo = Math.min(laneCeil, laneFloor);
+          const physHi = Math.max(laneCeil, laneFloor);
+          docY = clamp(docY, physLo, physHi);
         }
 
         out.x = next.x;
@@ -890,8 +919,10 @@
 
         // Inter-section mobile corridor: glide gracefully out into open sky between chapters & back to right lane!
         const gapH = Math.max(56, c.gapBottom - c.gapTop);
-        const corridorW = Math.min((width - 48) * .56, (gapH - 42) / .40, 152);
-        const streamHalfH = corridorW * .16 + 16;
+        const maxHorizW = Math.max(96, (width - 36) / 2.08);
+        const maxGapW = Math.max(96, (gapH - 32) / .56);
+        const corridorW = Math.min(maxHorizW, maxGapW, 174);
+        const streamHalfH = corridorW * .28 + 16;
         const gapMin = c.gapTop + streamHalfH;
         const gapMax = Math.max(gapMin, c.gapBottom - streamHalfH);
         const safeMin = Math.max(gapMin, sy + headerSafeBottom + streamHalfH);
@@ -903,8 +934,8 @@
           : Math.min(c.start, lockedDocY);
         const endDocY = clamp(c.end, Math.min(next.contentBottom - 26, Math.max(lockedDocY, next.contentTop + 26)), Math.max(next.contentTop + 26, next.contentBottom - 26));
 
-        if (u < .22) {
-          const p1 = smooth(u / .22);
+        if (u < .14) {
+          const p1 = smooth(u / .14);
           out.x = mLaneX;
           out.docY = mix(startDocY, lockedDocY, p1);
           out.w = mRailW;
@@ -913,11 +944,13 @@
           out.direction = -1;
           out.contact = 0;
           out.inCorridor = false;
-        } else if (u <= .78) {
-          const phase = (u - .22) / .56;
-          const arch = Math.sin(phase * Math.PI);
-          const archSmooth = smooth(arch);
-          out.x = mix(mLaneX, width * .46, archSmooth);
+        } else if (u <= .86) {
+          const phase = (u - .14) / .72;
+          // Smooth C1 flat-top plateau so mobile pieces reach & hold full heroic size across the open gap
+          const archSmooth = phase < .28
+            ? smooth(phase / .28)
+            : (phase > .72 ? smooth((1 - phase) / .28) : 1);
+          out.x = mix(mLaneX, width * .50, archSmooth);
           out.docY = lockedDocY;
           out.w = mix(mRailW, corridorW, archSmooth);
           out.formation = archSmooth;
@@ -926,7 +959,7 @@
           out.contact = 0;
           out.inCorridor = true;
         } else {
-          const p3 = smooth((u - .78) / .22);
+          const p3 = smooth((u - .86) / .14);
           out.x = mLaneX;
           out.docY = mix(lockedDocY, endDocY, p3);
           out.w = mRailW;
@@ -1015,12 +1048,66 @@
 
   function advanceAlongSafePath(sy, hudTop, dt) {
     const focusRatio = width <= 800 ? .44 : .46;
-    const targetS = sy + readingHeight * focusRatio;
+    const rawTargetS = sy + readingHeight * focusRatio;
+
+    // Track scroll idle duration & direction for Corridor Auto-Commit (never park mid-crossing!)
+    if (scrollCommit.lastSy < 0) {
+      scrollCommit.lastSy = sy;
+      scrollCommit.idleTime = 0;
+    } else {
+      const dSy = sy - scrollCommit.lastSy;
+      if (Math.abs(dSy) > .5) {
+        scrollCommit.lastMoveDir = dSy > 0 ? 1 : -1;
+        scrollCommit.lastSy = sy;
+        scrollCommit.idleTime = 0;
+      } else {
+        scrollCommit.idleTime += dt;
+      }
+    }
+
+    if (cinemaPlaying) {
+      scrollCommit.active = false;
+      scrollCommit.corridorIndex = -1;
+      scrollCommit.idleTime = 0;
+    } else {
+      // Find whether rawTargetS is inside an active side-switching corridor
+      let activeCorrIdx = -1;
+      for (let k = 0; k < corridors.length; k++) {
+        const c = corridors[k];
+        if (!c.crossSide) continue;
+        if (rawTargetS > c.start && rawTargetS < c.end) {
+          activeCorrIdx = k;
+          break;
+        }
+      }
+
+      // Unlock smoothly if user left the corridor or resumed scrolling past hysteresis (~18px)
+      if (scrollCommit.active) {
+        if (activeCorrIdx !== scrollCommit.corridorIndex || Math.abs(sy - scrollCommit.anchorSy) >= 18) {
+          scrollCommit.active = false;
+          scrollCommit.corridorIndex = -1;
+        }
+      }
+
+      // Engage Corridor Auto-Commit once scroll settles (~150ms idle) inside any side-switching corridor
+      if (!scrollCommit.active && activeCorrIdx >= 0
+        && (scrollCommit.idleTime >= .22 || (scrollCommit.idleTime >= .15 && scrollVelocity < .08))) {
+        const c = corridors[activeCorrIdx];
+        const u = unit((rawTargetS - c.start) / Math.max(1, c.end - c.start));
+        const uBiased = u + scrollCommit.lastMoveDir * .04;
+        scrollCommit.active = true;
+        scrollCommit.corridorIndex = activeCorrIdx;
+        scrollCommit.committedS = uBiased >= .5 ? (c.end + 1) : (c.start - 1);
+        scrollCommit.anchorSy = sy;
+      }
+    }
+
+    const goalS = scrollCommit.active ? scrollCommit.committedS : rawTargetS;
 
     if (!pathSpring.initialized) {
-      pathSpring.s = targetS;
+      pathSpring.s = goalS;
       pathSpring.vs = 0;
-      evalSafePath(targetS, sy, hudTop, pathSample);
+      evalSafePath(goalS, sy, hudTop, pathSample);
       pathSpring.formation = pathSample.formation;
       pathSpring.direction = pathSample.direction;
       pathSpring.contact = pathSample.contact;
@@ -1029,13 +1116,13 @@
       return pathSample;
     }
 
-    const gapToTarget = Math.abs(targetS - pathSpring.s);
+    const gapToTarget = Math.abs(rawTargetS - pathSpring.s);
     // If an external script/button jumped scrollY by > 1.25 viewports in one instant (e.g. Replay to top),
     // align directly onto the safe path at the new viewport rather than dragging offscreen.
-    if (gapToTarget > height * 1.25) {
-      pathSpring.s = targetS;
+    if (!scrollCommit.active && gapToTarget > height * 1.25) {
+      pathSpring.s = rawTargetS;
       pathSpring.vs = 0;
-      evalSafePath(targetS, sy, hudTop, pathSample);
+      evalSafePath(rawTargetS, sy, hudTop, pathSample);
       pathSpring.formation = pathSample.formation;
       pathSpring.direction = pathSample.direction;
       pathSpring.contact = pathSample.contact;
@@ -1044,15 +1131,20 @@
     }
 
     // Responsive critically-damped spring along the 1D safe path (zero stale-corridor lag, zero snaps!)
-    const omega = mix(14.5, 16.5, cinemaEnergy);
-    const maxSPerSec = Math.max(2400, height * 3.2);
-    const maxSFrame = Math.max(68, height * .12);
+    const omega = scrollCommit.active ? 11.5 : mix(14.5, 16.5, cinemaEnergy);
+    const maxSPerSec = scrollCommit.active ? Math.max(1100, height * 1.45) : Math.max(2400, height * 3.2);
+    const maxSFrame = scrollCommit.active ? Math.max(38, height * .055) : Math.max(68, height * .12);
 
-    stepSpringAxis(pathSpring.s, pathSpring.vs, targetS, omega, dt, maxSPerSec, maxSFrame);
-    // Guarantee `s` never falls behind `targetS` far enough for an open corridor to scroll above header nav
-    const maxLag = width <= 800 ? 60 : 78;
-    const candidateS = clamp(axisOut.pos, targetS - maxLag, targetS + maxLag);
-    const candidateVs = (candidateS !== axisOut.pos) ? 0 : axisOut.vel;
+    stepSpringAxis(pathSpring.s, pathSpring.vs, goalS, omega, dt, maxSPerSec, maxSFrame);
+    // During normal scroll, guarantee `s` never falls behind `rawTargetS` far enough for an open corridor to scroll above header nav.
+    // During Corridor Auto-Commit, allow the spring to finish gliding smoothly all the way to c.start / c.end along the corridor!
+    let candidateS = axisOut.pos;
+    let candidateVs = axisOut.vel;
+    if (!scrollCommit.active) {
+      const maxLag = width <= 800 ? 60 : 78;
+      candidateS = clamp(axisOut.pos, goalS - maxLag, goalS + maxLag);
+      if (candidateS !== axisOut.pos) candidateVs = 0;
+    }
 
     evalSafePath(candidateS, sy, hudTop, nextSample);
 
@@ -1060,7 +1152,7 @@
     pathSpring.s = candidateS;
     pathSpring.vs = candidateVs;
 
-    const blend = 1 - Math.exp(-dt * 12);
+    const blend = 1 - Math.exp(-dt * (width <= 800 ? 18 : 13));
     pathSpring.formation += (nextSample.formation - pathSpring.formation) * blend;
     if (Math.abs(pathSpring.formation - nextSample.formation) < .002) pathSpring.formation = nextSample.formation;
     if (prevFormation >= .32 && pathSpring.formation < .32 && nextSample.formation < .15) {
@@ -1459,7 +1551,7 @@
       const baseTurn = p.turn * (.12 + .72 * breath + open * (1.85 + .30 * Math.sin(chapter.index + i))) * drift;
       const fit = 1 - .28 * open;
       const inset = .90 - .08 * open;
-      const bob = Math.sin(t * 5.6 - p.lane * 1.6);
+      const bob = Math.sin(t * 4.4 - p.lane * 1.45);
 
       // Blend: Orbiting cluster <-> Horizontal corridor stream (`formation`) <-> Mobile vertical right-lane ribbon (`rail`)
       let lx = area.w * ox * fit;
@@ -1468,10 +1560,10 @@
       let localTurn = baseTurn;
 
       if (formation > .001) {
-        lx = mix(lx, area.w * p.lane * .26, formation);
-        ly = mix(ly, area.w * bob * .016, formation);
-        scale = mix(scale, area.w * .40, formation);
-        localTurn = mix(localTurn, area.direction * (.20 + bob * .10), formation);
+        lx = mix(lx, area.w * p.lane * .52, formation);
+        ly = mix(ly, area.w * bob * .032, formation);
+        scale = mix(scale, area.w * .72, formation);
+        localTurn = mix(localTurn, area.direction * (.16 + bob * .08), formation);
       }
       if (rail > .001) {
         lx = mix(lx, area.w * bob * .018, rail);
@@ -1529,7 +1621,7 @@
       const hr = desiredHaloR * haloScale + 18;
       includeBox(centerX - hr, centerY - hr, centerX + hr, centerY + hr);
     }
-    const wakeMargin = formation > .02 ? area.w * .52 + 16 : 0;
+    const wakeMargin = formation > .02 ? area.w * .54 + 20 : 0;
     for (let i = 0; i < poses.length; i++) {
       const p = poses[i];
       const pad = p.r + 12;
