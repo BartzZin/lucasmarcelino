@@ -5,7 +5,6 @@
   const ctx = canvas?.getContext('2d');
   if (!ctx) return;
 
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)');
   const TEXT_SELECTOR = 'header a, .intro .eyebrow, .intro h1, .intro p, .actions, .story h2, .story h3, .story p, .story small, .story time, #contato a, footer > *';
   const field = new Float32Array(12);
   const pointer = { x: 0, y: 0, active: false };
@@ -51,9 +50,6 @@
   const glowViolet = makeGlowSprite('#f6e6ff', 'rgba(228,191,255,.72)', 'rgba(198,137,241,.23)', 'rgba(185,126,224,0)');
   const glowMint = makeGlowSprite('#ecfff5', 'rgba(176,247,210,.74)', 'rgba(130,232,184,.24)', 'rgba(130,232,184,0)');
 
-  const IDLE_INTERVAL = 1000 / 26;
-  const CINEMA_INTERVAL = 1000 / 42;
-
   let width = 0, height = 0, ratio = 1, points = [];
   let cachedBlocks = [];
   const activeLeft = new Float32Array(256);
@@ -62,11 +58,14 @@
   const activeBottom = new Float32Array(256);
   let activeCount = 0;
 
-  let frame = 0, lastPaint = null, nextPaint = 0, elapsed = 0, fieldTime = -Infinity;
-  let scrollImpulse = 0, scrollPosition = window.scrollY;
-  let cinemaPlaying = false, cinemaMix = 0, cinemaSpeed = 1, cinemaFlow = 0;
+  let frame = 0, frameCount = 0, lastPaint = 0, elapsed = 0, fieldTime = -Infinity;
+  let smoothScrollY = window.scrollY;
+  let ambientFlow = 0;
+  let cinemaPlaying = false, cinemaMix = 0, cinemaSpeed = 1;
   let scrollVelocity = 0;
-  let reducedDirty = true;
+
+  const debugState = { frame: 0, elapsed: 0, count: 0, cinemaMix: 0 };
+  window.__curriculoParticlesState = debugState;
 
   function cacheTextBlocks() {
     const sy = window.scrollY;
@@ -86,7 +85,6 @@
       });
     }
     cachedBlocks = list;
-    reducedDirty = true;
   }
 
   function layout() {
@@ -129,8 +127,8 @@
       };
     });
 
+    debugState.count = points.length;
     cacheTextBlocks();
-    reducedDirty = true;
     schedule();
   }
 
@@ -170,11 +168,10 @@
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.clearRect(0, 0, width, height);
 
-    const gentle = reduced.matches;
-    const travel = (gentle ? 0 : 1) * (width < 800 ? .73 : 1);
-    const follow = gentle ? 1 : (1 - Math.exp(-dt * 7));
+    const travel = width < 800 ? .75 : 1;
+    const follow = 1 - Math.exp(-dt * 7.5);
     const radius = clamp(width * .115, 78, 155);
-    const active = !gentle && (time - fieldTime < 650);
+    const active = time - fieldTime < 650;
     const cursorRadius = radius * .92;
     const cursorReachSq = cursorRadius * cursorRadius;
 
@@ -183,10 +180,10 @@
       const d = point.depth;
       const phase = point.phase;
 
-      // Subtle upward parallax starfield flow during cinema descent (seamless vertical wrap)
+      // Continuous smooth upward stardust drift + damped scroll parallax (seamless vertical wrap)
       let baseY = point.y
-        - cinemaFlow * (.24 + d * .76)
-        - scrollImpulse * (.10 + d * .47) * travel;
+        - ambientFlow * (.22 + d * .78)
+        - smoothScrollY * (.05 + d * .14) * travel;
       if (baseY < 0 || baseY >= height) {
         baseY = ((baseY % height) + height) % height;
       }
@@ -199,11 +196,11 @@
         continue;
       }
 
-      const x = point.x + Math.sin(elapsed * (.15 + d * .10) + phase) * (2 + d * 5) * travel * room;
-      const y = baseY + Math.cos(elapsed * (.11 + d * .11) + phase) * (2 + d * 4) * travel * room;
+      const x = point.x + Math.sin(elapsed * (.38 + d * .26) + phase) * (3 + d * 6.5) * travel * room;
+      const y = baseY + Math.cos(elapsed * (.30 + d * .24) + phase) * (2.5 + d * 5.5) * travel * room;
 
       let dx = 0, dy = 0, highlight = 0;
-      if (!gentle && (active || pointer.active)) {
+      if (active || pointer.active) {
         // Indices 0..3 are puzzle sprite fields; index 4 is pointer cursor.
         for (let i = 0; i < 5; i++) {
           const mouse = i === 4;
@@ -240,25 +237,26 @@
         : Math.min(room, readingRoom(px, py));
       if (strength === 0) continue;
 
-      // Delicate cinema mint/lilac twinkle harmonic
+      // Delicate mint/lilac twinkle harmonic (alive by default, richer during cinema mode)
       let twinkleBoost = 0;
-      if (!gentle && cinemaMix > .02 && point.sprite >= 1) {
-        const wave = Math.sin(elapsed * (1.35 * point.twinkleRate) + phase * 2.1);
-        if (wave > .65) {
-          const peak = (wave - .65) / .35;
-          twinkleBoost = peak * peak * cinemaMix * (point.sprite === 2 ? .52 : .28);
+      if (point.sprite >= 1) {
+        const wave = Math.sin(elapsed * (1.28 * point.twinkleRate) + phase * 2.1);
+        if (wave > .66) {
+          const peak = (wave - .66) / .34;
+          const boostScale = .24 + cinemaMix * .76;
+          twinkleBoost = peak * peak * boostScale * (point.sprite === 2 ? .52 : .30);
         }
       }
 
       const pulse = point.pulse * strength;
-      const shimmer = gentle ? 0 : .047 * Math.sin(elapsed * .70 + phase);
-      const alpha = Math.min(1, (.21 + .30 * d + shimmer) * strength + pulse * .27 + twinkleBoost * .34);
+      const shimmer = .052 * Math.sin(elapsed * .85 + phase);
+      const alpha = Math.min(1, (.22 + .31 * d + shimmer) * strength + pulse * .27 + twinkleBoost * .34);
       const r = point.radius * (1 + pulse * .68 + twinkleBoost * .42);
 
       const glowIntensity = Math.max(pulse, twinkleBoost * .75);
       if (glowIntensity > .05) {
         const extent = Math.min(5 + strength * 24, Math.max(3 / ratio, r * 4.2));
-        ctx.globalAlpha = glowIntensity * (gentle ? .28 : .56);
+        ctx.globalAlpha = glowIntensity * .56;
         const halo = point.sprite === 2 ? glowMint : glowViolet;
         ctx.drawImage(halo, px - extent, py - extent, extent * 2, extent * 2);
       }
@@ -271,42 +269,41 @@
     ctx.globalAlpha = 1;
   }
 
+  // Full native smooth rAF animation loop (pauses only when document.hidden)
   function tick(time) {
     frame = 0;
     if (document.hidden || !points.length) return;
 
-    if (reduced.matches) {
-      reducedDirty = false;
-      draw(time, .016);
-      return;
-    }
+    const dt = lastPaint ? Math.min(.05, Math.max(.001, (time - lastPaint) / 1000)) : .0167;
+    lastPaint = time;
 
-    const interval = cinemaPlaying ? CINEMA_INTERVAL : IDLE_INTERVAL;
-    if (time >= nextPaint) {
-      const dt = Math.min(lastPaint === null ? interval : time - lastPaint, 100) / 1000;
-      lastPaint = time;
-      nextPaint = nextPaint ? Math.max(time + .1, nextPaint + interval) : time + interval;
+    const targetMix = cinemaPlaying ? 1 : 0;
+    cinemaMix += (targetMix - cinemaMix) * (1 - Math.exp(-dt * 4));
+    if (Math.abs(cinemaMix - targetMix) < .002) cinemaMix = targetMix;
 
-      const targetMix = cinemaPlaying ? 1 : 0;
-      cinemaMix += (targetMix - cinemaMix) * (1 - Math.exp(-dt * 4));
-      if (Math.abs(cinemaMix - targetMix) < .002) cinemaMix = targetMix;
+    elapsed += dt * (1 + cinemaMix * .28);
+    scrollVelocity *= Math.exp(-dt * 4.5);
 
-      elapsed += dt * (1 + cinemaMix * .25);
-      scrollImpulse *= Math.exp(-dt * 3.2);
-      scrollVelocity *= Math.exp(-dt * 4.5);
+    // Smoothly track scrollY for velvety multi-depth parallax (zero wheel-snap jumps)
+    const sy = window.scrollY;
+    smoothScrollY += (sy - smoothScrollY) * (1 - Math.exp(-dt * 7.5));
+    if (Math.abs(sy - smoothScrollY) < .05) smoothScrollY = sy;
 
-      if (cinemaMix > .004) {
-        cinemaFlow += dt * (18 * cinemaSpeed + scrollVelocity * 24) * cinemaMix;
-      }
+    // Continuous gentle upward cosmic drift, enhanced during cinema glide
+    ambientFlow += dt * (6.5 + cinemaMix * (18 * cinemaSpeed) + scrollVelocity * 20);
 
-      draw(time, dt);
-    }
+    draw(time, dt);
+
+    frameCount++;
+    debugState.frame = frameCount;
+    debugState.elapsed = elapsed;
+    debugState.cinemaMix = cinemaMix;
+
     schedule();
   }
 
   function schedule() {
     if (!frame && !document.hidden && points.length) {
-      if (reduced.matches && !reducedDirty) return;
       frame = requestAnimationFrame(tick);
     }
   }
@@ -331,8 +328,6 @@
     if (!detail) return;
     cinemaPlaying = detail.state === 'playing';
     if (Number.isFinite(detail.speed) && detail.speed > 0) cinemaSpeed = detail.speed;
-    nextPaint = 0;
-    reducedDirty = true;
     schedule();
   });
 
@@ -341,20 +336,14 @@
     if (detail && Number.isFinite(detail.velocity)) {
       scrollVelocity = Math.max(scrollVelocity, clamp(detail.velocity, 0, 1));
     }
-    reducedDirty = true;
     schedule();
   });
 
   window.addEventListener('cv-progress', () => {
-    reducedDirty = true;
     schedule();
   });
 
   window.addEventListener('scroll', () => {
-    const sy = window.scrollY;
-    scrollImpulse = clamp(scrollImpulse + sy - scrollPosition, -65, 65);
-    scrollPosition = sy;
-    reducedDirty = true;
     schedule();
   }, { passive: true });
 
@@ -364,25 +353,12 @@
   if (window.ResizeObserver && main) new ResizeObserver(cacheTextBlocks).observe(main);
   document.fonts?.ready.then(() => { cacheTextBlocks(); schedule(); });
 
-  reduced.addEventListener('change', () => {
-    if (frame) cancelAnimationFrame(frame);
-    frame = 0;
-    lastPaint = null;
-    nextPaint = 0;
-    reducedDirty = true;
-    schedule();
-  });
-
   document.addEventListener('visibilitychange', () => {
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
-    lastPaint = null;
-    nextPaint = 0;
+    lastPaint = 0;
     pointer.active = false;
-    if (!document.hidden) {
-      reducedDirty = true;
-      schedule();
-    }
+    if (!document.hidden) schedule();
   });
 
   document.documentElement.classList.add('particles-ready');

@@ -9,7 +9,6 @@
   const intro = main.querySelector('.intro');
   const chapters = [...main.querySelectorAll('.story section')];
   const TEXT_SELECTOR = 'header nav, .intro .eyebrow, .intro h1, .intro p, .intro .actions, .chapter-inner:not(.contact-panel), .story h2:not(#contato-titulo), .story .piece, footer';
-  const preference = matchMedia('(prefers-reduced-motion: reduce)');
   const tau = Math.PI * 2;
   const unit = v => Math.max(0, Math.min(1, v));
   const smooth = v => { const t = unit(v); return t * t * (3 - 2 * t); };
@@ -91,10 +90,34 @@
   const particleField = new Float32Array(art.length * 3);
   const particleEvent = new CustomEvent('cv-puzzle-field', { detail: particleField });
   const chapterState = { index: 0, local: 0 };
-  const stageDest = { x: 0, y: 0, docY: 0, w: 0, rail: 0, side: 1, index: -1, isContact: false, hasSide: false };
-  const settledState = { x: 0, y: 0, docY: 0, w: 0, rail: 0, side: 1, index: -1, isContact: false, valid: false };
-  const activeStage = { x: 0, y: 0, docY: 0, w: 0, rail: 0, formation: 0, direction: 0, isContact: false };
+  const stationA = { x: 0, docY: 0, w: 0, side: 1, isContact: false };
+  const stationB = { x: 0, docY: 0, w: 0, side: 1, isContact: false };
+  const stageDest = { x: 0, y: 0, w: 0, rail: 0, formation: 0, direction: 1, contact: 0 };
+  const axisOut = { pos: 0, vel: 0 };
+  const spring = {
+    x: 0, vx: 0,
+    y: 0, vy: 0,
+    w: 0, vw: 0,
+    formation: 0,
+    direction: 1,
+    contact: 0,
+    rail: 0,
+    initialized: false
+  };
   const paintedRect = { x: 0, y: 0, w: 0, h: 0, active: false };
+
+  // Read-only telemetry state mutated in-place (zero per-frame allocations)
+  const debugState = {
+    x: 0,
+    y: 0,
+    w: 0,
+    t: 0,
+    frame: 0,
+    formation: 0,
+    contact: 0,
+    pieces: [[0, 0], [0, 0], [0, 0], [0, 0]]
+  };
+  window.__curriculoPuzzleState = debugState;
 
   const stars = [
     [-.52, -.26, 4.1], [-.42, -.31, 1.5], [-.35, -.43, 2.4], [-.31, -.46, 1.1], [-.17, -.53, 1.5],
@@ -103,18 +126,14 @@
   ];
   const ORBIT_SEGMENTS = 15;
 
-  let width = 0, height = 0, ratio = 1, layout = [], marks = [0, 1];
+  let width = 0, height = 0, ratio = 1, layout = [], corridors = [], marks = [0, 1];
   let flight = null, hero = null, distance = 1;
   let mobileRail = null, mobileDock = null;
   let cachedBlocks = [];
-  let target = 0, position = 0, clock = .4, previous = 0, frame = 0, ready = false;
-  let paintedScroll = -Infinity;
-  let clearedScroll = -Infinity;
+  let target = 0, position = 0, clock = .4, previous = 0, frame = 0, frameCount = 0, ready = false;
   let headerSafeBottom = 76;
-  let lastScroll = -Infinity;
-  let transfer = null, arrival = -Infinity;
+  let arrival = -10;
   let cinemaPlaying = false, cinemaEnergy = 0, cinemaSpeed = 1, scrollVelocity = 0;
-  let reducedDirty = true;
   const cursor = { x: 0, y: 0, tx: 0, ty: 0 };
 
   function cacheTextBlocks(sy) {
@@ -138,6 +157,71 @@
     cachedBlocks = list;
   }
 
+  function buildCorridors(readingHeight) {
+    const list = [];
+    if (!hero || !layout.length) {
+      corridors = list;
+      return;
+    }
+
+    const halfBand = Math.min(175, Math.max(105, readingHeight * .21));
+    const maxFocus = distance + readingHeight * .46;
+
+    // Corridor 0: Hero -> Chapter 0 (smooth continuous vertical & width glide on right side)
+    const first = layout[0];
+    const heroStart = readingHeight * .46 + 24;
+    const heroEnd = Math.max(
+      heroStart + 120,
+      first.top + Math.min(180, Math.max(80, (first.bottom - first.top) * .22))
+    );
+    list.push({
+      start: heroStart,
+      end: heroEnd,
+      corridorDocY: (hero.top + hero.h + first.contentTop) * .5,
+      crossSide: first.side !== 1
+    });
+
+    // Corridors 1..N-1: Chapter (k-1) -> Chapter k
+    for (let i = 1; i < layout.length; i++) {
+      const prev = layout[i - 1];
+      const next = layout[i];
+      const mid = (prev.contentBottom + next.contentTop) * .5;
+      let start = mid - halfBand;
+      let end = mid + halfBand;
+
+      if (next.isContact) {
+        // Ensure the puzzle finishes gliding smoothly into the centered #contato crest
+        // right when cinema mode or bottom scroll rests on the contact panel.
+        const panelCenter = (next.contentTop + next.contentBottom) * .5;
+        const restSy = Math.min(distance, Math.max(0, panelCenter - height * .5));
+        const restFocus = Math.min(maxFocus, restSy + readingHeight * .46);
+        end = Math.min(end, restFocus - 16);
+        start = Math.max(prev.top + 60, end - halfBand * 1.9);
+      }
+
+      if (end < start + 60) end = start + 60;
+      list.push({
+        start,
+        end,
+        corridorDocY: mid,
+        crossSide: prev.side !== next.side
+      });
+    }
+
+    // Guarantee strictly non-overlapping corridor bands so transitions stay C1-continuous.
+    for (let i = 0; i < list.length - 1; i++) {
+      const a = list[i];
+      const b = list[i + 1];
+      if (a.end > b.start - 10) {
+        const split = (a.end + b.start) * .5;
+        a.end = Math.max(a.start + 30, split - 5);
+        b.start = Math.min(b.end - 30, split + 5);
+      }
+    }
+
+    corridors = list;
+  }
+
   function measure() {
     const bounds = canvas.getBoundingClientRect();
     width = bounds.width;
@@ -155,9 +239,8 @@
       paintedRect.active = false;
     }
 
-    settledState.valid = false;
-    transfer = null;
-    arrival = -Infinity;
+    // Note: Do NOT reset spring.initialized here! Preserving the spring state across
+    // layout/font/ResizeObserver updates prevents any sudden mid-scroll teleport.
 
     const sy = window.scrollY;
     const contentBox = main.getBoundingClientRect();
@@ -211,8 +294,6 @@
       const isContact = section.id === 'contato';
 
       if (isContact) {
-        // Dedicated poised, centered finale crest above the contact card
-        // (eliminates the tiny ~80px stray clump in the left margin).
         const prevContentBottom = layout.length ? layout[layout.length - 1].contentBottom : box.top + sy;
         const panelTop = content.top + sy;
         const gapAbove = Math.max(0, panelTop - prevContentBottom);
@@ -222,11 +303,6 @@
           content.width * .32,
           232
         );
-        const idealDocY = gapAbove >= 110
-          ? panelTop - contactW * .48
-          : panelTop - Math.max(26, gapAbove * .30);
-        const minDocY = prevContentBottom + contactW * .42;
-        const contactDocY = gapAbove >= 110 ? Math.max(minDocY, idealDocY) : idealDocY;
 
         layout.push({
           top: box.top + sy,
@@ -237,8 +313,7 @@
           free: content.width,
           side: 0,
           isContact: true,
-          contactW,
-          contactDocY
+          contactW
         });
       } else {
         const onLeft = content.left + content.right < contentBox.left + contentBox.right;
@@ -252,8 +327,7 @@
           free,
           side: onLeft ? 1 : -1,
           isContact: false,
-          contactW: 0,
-          contactDocY: 0
+          contactW: 0
         });
       }
     }
@@ -267,9 +341,9 @@
       if (mark > marks[marks.length - 1] + .028 && mark < .96) marks.push(mark);
     }
     marks.push(1);
+    buildCorridors(readingHeight);
+
     target = unit(sy / distance);
-    if (preference.matches) position = target;
-    reducedDirty = true;
     schedule();
   }
 
@@ -281,234 +355,245 @@
     return chapterState;
   }
 
-  function computeStage(gentle, sy) {
-    if (width <= 800) {
-      const slot = flight || { x: width * .5, y: (intro?.offsetHeight || 260) + 80, w: width, h: 160 };
-      const cy = slot.y - sy;
-      const displayScroll = position * distance;
-      const rail = smooth(displayScroll / Math.max(60, slot.y - height * .32));
-      const railY = height * (.47 + (gentle ? .04 : .23) * Math.sin(position * tau * 2.25 - .6));
-      const lift = smooth((height * .32 - slot.y + displayScroll) / (height * .22));
-      const mr = mobileRail || { x: width * .85, w: Math.min(84, width * .22) };
-
-      stageDest.x = mix(slot.x, mr.x, rail);
-      stageDest.y = mix(cy, railY, lift);
-      stageDest.w = mix(Math.min(slot.w * .77, slot.h * .79), mr.w, rail);
-      stageDest.rail = rail;
-      stageDest.hasSide = false;
-      stageDest.isContact = false;
-      stageDest.index = -1;
-
-      if (mobileDock && rail >= 1) {
-        const remaining = distance - displayScroll;
-        const approach = Math.min(height * .55, Math.max(190, mobileDock.gap * 2.2));
-        const align = smooth((approach - remaining) / (approach * .55));
-        const pocketY = mobileDock.y - sy;
-        const visible = smooth((height - pocketY - mobileDock.w * .55) / (mobileDock.w * .38));
-        const cross = smooth((approach * .45 - remaining) / (approach * .42)) * visible;
-        stageDest.y = mix(stageDest.y, pocketY, align);
-        stageDest.x = mix(stageDest.x, mobileDock.x, cross);
-        stageDest.w = mix(stageDest.w, mobileDock.w, cross);
-        stageDest.isContact = cross > .55;
-      }
-      stageDest.docY = stageDest.y + sy;
-      return stageDest;
+  // Pure, continuous evaluation of station s (0 = hero, 1..N = chapters)
+  function evalStation(s, sy, focus, readingHeight, out) {
+    if (s <= 0 || !layout.length) {
+      out.w = Math.min(hero.free * .73, hero.h * .68, readingHeight * .66);
+      out.x = hero.x;
+      out.docY = hero.top + hero.h * .49;
+      out.side = 1;
+      out.isContact = false;
+      return out;
     }
 
-    const readingHeight = Math.min(height, hero.h / .82);
-    const focus = sy + readingHeight * .46;
-    let index = -1;
-    for (let i = layout.length - 1; i >= 0; i--) {
-      if (focus >= layout[i].top) { index = i; break; }
-    }
-    if (index < 0) {
-      const w = Math.min(hero.free * .73, hero.h * .68, readingHeight * .66);
-      const docY = hero.top + hero.h * .49;
-      stageDest.x = hero.x;
-      stageDest.y = docY - sy;
-      stageDest.docY = docY;
-      stageDest.w = w;
-      stageDest.rail = 0;
-      stageDest.side = 1;
-      stageDest.index = -1;
-      stageDest.isContact = false;
-      stageDest.hasSide = true;
-      return stageDest;
-    }
-
-    const row = layout[index];
+    const row = layout[Math.min(layout.length - 1, s - 1)];
     if (row.isContact) {
-      // Fit and center the finale crest cleanly in the open band between
-      // the sticky navbar pill and the top of .contact-panel so topo.webp
-      // and upper orbits are never clipped by header clearRect.
+      // C1-continuous contact crest fit between sticky header and .contact-panel
       const headerClearBottom = headerSafeBottom + 12;
       const panelVisTop = row.contentTop - sy;
-      const openGap = panelVisTop - headerClearBottom;
-      const fittedW = openGap >= 115
-        ? Math.min(row.contactW, Math.max(114, openGap / 1.24))
-        : Math.min(row.contactW, 134);
-      const minVisY = headerClearBottom + fittedW * .66;
-      const idealVisY = openGap >= fittedW * 1.18
-        ? headerClearBottom + openGap * .54
-        : panelVisTop - fittedW * .48;
-      const y = Math.max(minVisY, idealVisY);
-      stageDest.x = row.x;
-      stageDest.y = y;
-      stageDest.docY = y + sy;
-      stageDest.w = fittedW;
-      stageDest.rail = 0;
-      stageDest.side = 0;
-      stageDest.index = index;
-      stageDest.isContact = true;
-      stageDest.hasSide = true;
-      return stageDest;
+      const openGap = Math.max(0, panelVisTop - headerClearBottom);
+      const fittedW = Math.min(row.contactW, Math.max(108, openGap / 1.28));
+      const minVisY = headerClearBottom + fittedW * .64;
+      const maxVisY = Math.max(minVisY, panelVisTop - fittedW * .54);
+      const centeredVisY = headerClearBottom + openGap * .52;
+      const visY = Math.max(minVisY, Math.min(maxVisY, centeredVisY));
+
+      out.w = fittedW;
+      out.x = row.x;
+      out.docY = visY + sy;
+      out.side = 0;
+      out.isContact = true;
+      return out;
     }
 
     const heightAvailable = Math.max(1, row.bottom - row.top);
     const w = Math.min(row.free * .65, readingHeight * .53, heightAvailable * .61);
     const local = unit((focus - row.top) / heightAvailable);
-    const desired = focus + readingHeight * (gentle ? .02 : .073) * Math.sin(local * tau - .32);
-    const docY = Math.max(row.top + w * .67, Math.min(row.bottom - w * .67, desired));
+    const desired = focus + readingHeight * .068 * Math.sin(local * tau - .32);
+    const minDoc = row.top + w * .67;
+    const maxDoc = Math.max(minDoc, row.bottom - w * .67);
 
-    stageDest.x = row.x;
-    stageDest.y = docY - sy;
-    stageDest.docY = docY;
-    stageDest.w = w;
+    out.w = w;
+    out.x = row.x;
+    out.docY = Math.max(minDoc, Math.min(maxDoc, desired));
+    out.side = row.side;
+    out.isContact = false;
+    return out;
+  }
+
+  // Computes a 100% C1-continuous target stage for any scrollY (zero boundary snaps)
+  function computeTargetStage(sy) {
+    if (width <= 800) {
+      const slot = flight || { x: width * .5, y: (intro?.offsetHeight || 260) + 80, w: width, h: 160 };
+      const cy = slot.y - sy;
+      const scrollRatio = unit(sy / distance);
+      const rail = smooth(sy / Math.max(60, slot.y - height * .32));
+      const railY = height * (.47 + .21 * Math.sin(scrollRatio * tau * 2.25 - .6));
+      const lift = smooth((height * .32 - slot.y + sy) / (height * .22));
+      const mr = mobileRail || { x: width * .85, w: Math.min(84, width * .22) };
+
+      let tx = mix(slot.x, mr.x, rail);
+      let ty = mix(cy, railY, lift);
+      let tw = mix(Math.min(slot.w * .77, slot.h * .79), mr.w, rail);
+      let contact = 0;
+
+      if (mobileDock) {
+        const remaining = Math.max(0, distance - sy);
+        const approach = Math.min(height * .55, Math.max(190, mobileDock.gap * 2.2));
+        const align = smooth((approach - remaining) / (approach * .55)) * rail;
+        const pocketY = mobileDock.y - sy;
+        const visible = smooth((height - pocketY - mobileDock.w * .55) / (mobileDock.w * .38));
+        const cross = smooth((approach * .45 - remaining) / (approach * .42)) * visible * rail;
+        ty = mix(ty, pocketY, align);
+        tx = mix(tx, mobileDock.x, cross);
+        tw = mix(tw, mobileDock.w, cross);
+        contact = cross;
+      }
+
+      stageDest.x = tx;
+      stageDest.y = ty;
+      stageDest.w = tw;
+      stageDest.rail = rail;
+      stageDest.formation = 0;
+      stageDest.direction = 1;
+      stageDest.contact = contact;
+      return stageDest;
+    }
+
+    const readingHeight = Math.min(height, hero.h / .82);
+    const focus = sy + readingHeight * .46;
+
+    if (!corridors.length || focus <= corridors[0].start) {
+      evalStation(0, sy, focus, readingHeight, stationA);
+      stageDest.x = stationA.x;
+      stageDest.y = stationA.docY - sy;
+      stageDest.w = stationA.w;
+      stageDest.rail = 0;
+      stageDest.formation = 0;
+      stageDest.direction = 1;
+      stageDest.contact = 0;
+      return stageDest;
+    }
+
+    for (let k = 0; k < corridors.length; k++) {
+      const c = corridors[k];
+      if (focus < c.end) {
+        // Inside smooth transition corridor between station k and station k+1
+        const u = smooth((focus - c.start) / Math.max(1, c.end - c.start));
+        evalStation(k, sy, focus, readingHeight, stationA);
+        evalStation(k + 1, sy, focus, readingHeight, stationB);
+
+        if (!c.crossSide) {
+          // Same-side transition (e.g., Hero -> #trajetoria)
+          stageDest.x = mix(stationA.x, stationB.x, u);
+          stageDest.y = mix(stationA.docY, stationB.docY, u) - sy;
+          stageDest.w = mix(stationA.w, stationB.w, u);
+          stageDest.rail = 0;
+          stageDest.formation = 0;
+          stageDest.direction = Math.sign(stationB.x - stationA.x) || 1;
+          stageDest.contact = mix(stationA.isContact ? 1 : 0, stationB.isContact ? 1 : 0, u);
+          return stageDest;
+        }
+
+        // Cross-side corridor flight: smoothly aligns into the open gap between chapters,
+        // flies across in sleek formation with comet wakes, and settles onto the new side.
+        const bell = Math.sin(u * Math.PI);
+        const xTravel = smooth((u - .14) / .72);
+        const linearDocY = mix(stationA.docY, stationB.docY, u);
+        const corridorTargetDocY = stationB.isContact
+          ? Math.min(stationB.docY, c.corridorDocY)
+          : c.corridorDocY;
+        const docY = mix(linearDocY, corridorTargetDocY, bell * .68);
+        const corridorW = Math.min(stationA.w, stationB.w) * .88;
+
+        stageDest.x = mix(stationA.x, stationB.x, xTravel);
+        stageDest.y = docY - sy;
+        stageDest.w = mix(mix(stationA.w, stationB.w, u), corridorW, bell * .55);
+        stageDest.rail = 0;
+        stageDest.formation = bell * bell;
+        stageDest.direction = Math.sign(stationB.x - stationA.x) || 1;
+        stageDest.contact = mix(stationA.isContact ? 1 : 0, stationB.isContact ? 1 : 0, u);
+        return stageDest;
+      }
+
+      if (k === corridors.length - 1 || focus <= corridors[k + 1].start) {
+        evalStation(k + 1, sy, focus, readingHeight, stationA);
+        stageDest.x = stationA.x;
+        stageDest.y = stationA.docY - sy;
+        stageDest.w = stationA.w;
+        stageDest.rail = 0;
+        stageDest.formation = 0;
+        stageDest.direction = 1;
+        stageDest.contact = stationA.isContact ? 1 : 0;
+        return stageDest;
+      }
+    }
+
+    evalStation(layout.length, sy, focus, readingHeight, stationA);
+    stageDest.x = stationA.x;
+    stageDest.y = stationA.docY - sy;
+    stageDest.w = stationA.w;
     stageDest.rail = 0;
-    stageDest.side = row.side;
-    stageDest.index = index;
-    stageDest.isContact = false;
-    stageDest.hasSide = true;
+    stageDest.formation = 0;
+    stageDest.direction = 1;
+    stageDest.contact = stationA.isContact ? 1 : 0;
     return stageDest;
   }
 
-  function copyStageToSettled(src) {
-    settledState.x = src.x;
-    settledState.y = src.y;
-    settledState.docY = src.docY;
-    settledState.w = src.w;
-    settledState.rail = src.rail;
-    settledState.side = src.side;
-    settledState.index = src.index;
-    settledState.isContact = src.isContact;
-    settledState.valid = true;
+  // Exact analytical critically-damped 2nd-order spring step with gentle speed & per-frame step ceiling:
+  // guarantees C1-continuous velocity, zero overshoot, and zero single-frame teleports even across GC stalls.
+  function stepSpringAxis(cur, vel, targetVal, omega, dt, maxSpeed, maxFrameStep) {
+    const e = Math.exp(-omega * dt);
+    const diff = cur - targetVal;
+    const temp = (vel + omega * diff) * dt;
+    let nextPos = targetVal + (diff + temp) * e;
+    let nextVel = (vel - omega * temp) * e;
+
+    const maxStep = Math.min(maxSpeed * dt, maxFrameStep);
+    const delta = nextPos - cur;
+    if (delta > maxStep) {
+      nextPos = cur + maxStep;
+      nextVel = Math.min(maxSpeed, maxStep / dt);
+    } else if (delta < -maxStep) {
+      nextPos = cur - maxStep;
+      nextVel = -Math.min(maxSpeed, maxStep / dt);
+    }
+
+    axisOut.pos = nextPos;
+    axisOut.vel = nextVel;
   }
 
-  function resolveTravelingStage(dest, time, dt, sy, gentle) {
-    if (!dest.hasSide || gentle) {
-      activeStage.x = dest.x;
-      activeStage.y = dest.y;
-      activeStage.docY = dest.docY;
-      activeStage.w = dest.w;
-      activeStage.rail = dest.rail;
-      activeStage.formation = 0;
-      activeStage.direction = 0;
-      activeStage.isContact = dest.isContact;
-      if (dest.hasSide) copyStageToSettled(dest);
-      return activeStage;
+  function advanceRenderedStage(dest, dt) {
+    if (!spring.initialized) {
+      spring.x = dest.x; spring.vx = 0;
+      spring.y = dest.y; spring.vy = 0;
+      spring.w = dest.w; spring.vw = 0;
+      spring.formation = dest.formation;
+      spring.direction = dest.direction || 1;
+      spring.contact = dest.contact;
+      spring.rail = dest.rail;
+      spring.initialized = true;
+      return spring;
     }
 
-    if (!settledState.valid) copyStageToSettled(dest);
+    // Silky critically-damped spring tracking (zero snap, zero laggy rubber-banding)
+    const omega = mix(9.2, 10.8, cinemaEnergy);
+    const maxPosSpeed = Math.min(960, Math.max(660, width * .68));
+    const maxFramePos = width <= 800 ? 15 : 22;
 
-    if (
-      Math.abs(settledState.index - dest.index) > 1 ||
-      (transfer && dest.index !== transfer.fromIndex && dest.index !== transfer.toIndex)
-    ) {
-      transfer = null;
-      copyStageToSettled(dest);
-      arrival = time;
+    stepSpringAxis(spring.x, spring.vx, dest.x, omega, dt, maxPosSpeed, maxFramePos);
+    spring.x = axisOut.pos;
+    spring.vx = axisOut.vel;
+
+    stepSpringAxis(spring.y, spring.vy, dest.y, omega, dt, maxPosSpeed, maxFramePos);
+    spring.y = axisOut.pos;
+    spring.vy = axisOut.vel;
+
+    stepSpringAxis(spring.w, spring.vw, dest.w, omega * .92, dt, 380, 9);
+    spring.w = axisOut.pos;
+    spring.vw = axisOut.vel;
+
+    // Combine corridor formation + smooth speed-driven flight formation during rapid glides
+    const horizSpeed = Math.abs(spring.vx);
+    const speedFormation = smooth((horizSpeed - 190) / 460) * (1 - dest.contact * .45);
+    const targetFormation = Math.max(dest.formation, speedFormation);
+    const prevFormation = spring.formation;
+    spring.formation += (targetFormation - spring.formation) * (1 - Math.exp(-dt * 9.5));
+    if (spring.formation < .001 && targetFormation === 0) spring.formation = 0;
+
+    if (prevFormation >= .28 && spring.formation < .28 && targetFormation < .15) {
+      arrival = clock;
     }
 
-    if (!transfer && settledState.side !== dest.side) {
-      const border = Math.max(settledState.index, dest.index);
-      const before = layout[border - 1];
-      const after = layout[border];
-      const startDoc = before ? before.contentBottom : hero.top + hero.h;
-      const endDoc = after ? after.contentTop : dest.docY;
-      const lane = (dest.isContact || settledState.isContact)
-        ? (dest.isContact ? dest.docY : settledState.docY)
-        : (startDoc + endDoc) / 2;
-      const laneWidth = (dest.isContact || settledState.isContact)
-        ? Math.min(settledState.w, dest.w) * .92
-        : Math.min(settledState.w, dest.w, Math.max(1, (endDoc - startDoc) * 2.5));
+    const targetDir = horizSpeed > 25 ? Math.sign(spring.vx) : (dest.direction || spring.direction || 1);
+    spring.direction += (targetDir - spring.direction) * (1 - Math.exp(-dt * 10));
 
-      transfer = {
-        start: time,
-        fromX: settledState.x,
-        fromDocY: settledState.docY,
-        fromW: settledState.w,
-        fromIndex: settledState.index,
-        fromSide: settledState.side,
-        toX: dest.x,
-        toDocY: dest.docY,
-        toW: dest.w,
-        toIndex: dest.index,
-        toSide: dest.side,
-        toIsContact: dest.isContact,
-        lane,
-        laneWidth
-      };
-    }
+    const blendEase = 1 - Math.exp(-dt * 8.5);
+    spring.contact += (dest.contact - spring.contact) * blendEase;
+    if (Math.abs(spring.contact - dest.contact) < .001) spring.contact = dest.contact;
+    spring.rail += (dest.rail - spring.rail) * blendEase;
 
-    if (!transfer) {
-      const easing = 1 - Math.exp(-dt * (12 + cinemaEnergy * 3));
-      const y = mix(settledState.y, dest.y, easing);
-      settledState.x = mix(settledState.x, dest.x, easing);
-      settledState.w = mix(settledState.w, dest.w, easing);
-      settledState.y = y;
-      settledState.docY = y + sy;
-      settledState.rail = dest.rail;
-      settledState.side = dest.side;
-      settledState.index = dest.index;
-      settledState.isContact = dest.isContact;
-
-      activeStage.x = settledState.x;
-      activeStage.y = settledState.y;
-      activeStage.docY = settledState.docY;
-      activeStage.w = settledState.w;
-      activeStage.rail = settledState.rail;
-      activeStage.formation = 0;
-      activeStage.direction = 0;
-      activeStage.isContact = settledState.isContact;
-      return activeStage;
-    }
-
-    const duration = cinemaPlaying ? 1.18 : 1.06;
-    const phase = unit((time - transfer.start) / duration);
-    const depart = smooth(phase / .18);
-    const travel = smooth((phase - .18) / .44);
-    const dock = smooth((phase - .62) / .38);
-    const formation = depart * (1 - dock);
-
-    const useDest = dest.side === transfer.toSide;
-    const landX = useDest ? dest.x : transfer.toX;
-    const landDocY = useDest ? dest.docY : transfer.toDocY;
-    const landW = useDest ? dest.w : transfer.toW;
-    const landIsContact = useDest ? dest.isContact : transfer.toIsContact;
-
-    const docY = mix(mix(transfer.fromDocY, transfer.lane, depart), landDocY, dock);
-    activeStage.x = mix(transfer.fromX, landX, travel);
-    activeStage.y = docY - sy;
-    activeStage.docY = docY;
-    activeStage.w = mix(mix(transfer.fromW, transfer.laneWidth, depart), landW, dock);
-    activeStage.rail = 0;
-    activeStage.formation = formation;
-    activeStage.direction = Math.sign(transfer.toX - transfer.fromX) || 1;
-    activeStage.isContact = landIsContact && phase > .7;
-
-    if (phase === 1) {
-      settledState.x = landX;
-      settledState.y = landDocY - sy;
-      settledState.docY = landDocY;
-      settledState.w = landW;
-      settledState.rail = 0;
-      settledState.side = transfer.toSide;
-      settledState.index = useDest ? dest.index : transfer.toIndex;
-      settledState.isContact = landIsContact;
-      transfer = null;
-      arrival = time;
-    }
-    return activeStage;
+    return spring;
   }
 
   function stampStar(x, y, r, isMint, alpha) {
@@ -520,12 +605,12 @@
     ctx.globalAlpha = prevAlpha;
   }
 
-  function atmosphere(w, t, progress, energy, isContact) {
+  function atmosphere(w, t, progress, energy, contactMix) {
     const cinemaBoost = cinemaEnergy * .22 + scrollVelocity * .10;
-    const finaleSoft = isContact ? .86 : 1;
+    const finaleSoft = mix(1, .88, contactMix);
 
-    // Subtle soft ambient orbital bloom during cinema mode or at the #contato finale
-    const bloomAlpha = (.09 + cinemaEnergy * .16 + (isContact ? .14 : 0)) * finaleSoft;
+    // Subtle soft ambient orbital bloom — always gently glowing, richer during cinema/finale
+    const bloomAlpha = (.10 + cinemaEnergy * .16 + contactMix * .14) * finaleSoft;
     if (bloomAlpha > .02) {
       const prevAlpha = ctx.globalAlpha;
       const br = w * (.72 + cinemaEnergy * .10);
@@ -539,9 +624,11 @@
       const rgb = isMint ? '173,255,207' : '217,161,255';
       const rx = w * (isMint ? .643 : .644);
       const ry = w * (isMint ? .188 : .218);
-      const tilt = (isContact ? (isMint ? .12 : -.12) : (isMint ? .15 : -.40)) + Math.sin(t * .74 + lane) * (isContact ? .04 : .09);
-      const cy = w * (isContact ? (isMint ? .06 : -.06) : (isMint ? .131 : -.100));
-      const head = (isMint ? -.54 : 3.05) + (isMint ? -.84 : 1.04) * t + progress * 2.1;
+      const baseTilt = mix(isMint ? .15 : -.40, isMint ? .12 : -.12, contactMix);
+      const tiltAmp = mix(.09, .045, contactMix);
+      const tilt = baseTilt + Math.sin(t * .74 + lane) * tiltAmp;
+      const cy = w * mix(isMint ? .131 : -.100, isMint ? .06 : -.06, contactMix);
+      const head = (isMint ? -.54 : 3.05) + (isMint ? -.88 : 1.08) * t + progress * 2.1;
 
       ctx.save();
       ctx.translate(0, cy);
@@ -549,7 +636,6 @@
       ctx.lineCap = 'round';
       ctx.lineWidth = Math.max(.72, w * .0018);
 
-      // 15 segments per orbit (down from 22) for lighter GPU stroke cost.
       const step = tau / ORBIT_SEGMENTS;
       for (let i = 0; i < ORBIT_SEGMENTS; i++) {
         const frac = i / ORBIT_SEGMENTS;
@@ -561,14 +647,14 @@
         ctx.stroke();
       }
 
-      // Luminous comet trail — richer and longer during cinema glide
-      const tail = .50 + energy * .24 + cinemaEnergy * .28 + scrollVelocity * .15;
+      // Luminous comet trail — continuously gliding, richer during cinema mode
+      const tail = .52 + energy * .24 + cinemaEnergy * .28 + scrollVelocity * .15;
       ctx.beginPath();
       ctx.ellipse(0, 0, rx, ry, 0, head - tail, head);
-      ctx.strokeStyle = 'rgba(' + rgb + ',' + Math.min(1, (.11 + cinemaBoost * .22) * finaleSoft).toFixed(3) + ')';
+      ctx.strokeStyle = 'rgba(' + rgb + ',' + Math.min(1, (.12 + cinemaBoost * .22) * finaleSoft).toFixed(3) + ')';
       ctx.lineWidth = Math.max(4, w * (.0115 + cinemaEnergy * .0035));
       ctx.stroke();
-      ctx.strokeStyle = 'rgba(' + rgb + ',' + Math.min(1, (.30 + cinemaBoost * .24) * finaleSoft).toFixed(3) + ')';
+      ctx.strokeStyle = 'rgba(' + rgb + ',' + Math.min(1, (.32 + cinemaBoost * .24) * finaleSoft).toFixed(3) + ')';
       ctx.lineWidth = Math.max(2.4, w * .0058);
       ctx.stroke();
       ctx.strokeStyle = 'rgba(' + rgb + ',' + Math.min(1, (.94 + cinemaEnergy * .06) * finaleSoft).toFixed(3) + ')';
@@ -585,9 +671,9 @@
 
     for (let i = 0; i < stars.length; i++) {
       const s = stars[i];
-      const twinkle = .55 + .38 * Math.sin(t * (1.17 + (i % 3) * .37) + i * 1.8);
+      const twinkle = .55 + .38 * Math.sin(t * (1.22 + (i % 3) * .37) + i * 1.8);
       const radius = Math.max(.9, (w / 370) * s[2]) * (.78 + twinkle * .29) * (1 + cinemaEnergy * .08);
-      const drift = .045 * Math.sin(t * .7 + i);
+      const drift = .048 * Math.sin(t * .72 + i);
       stampStar(
         (s[0] + drift) * w,
         (s[1] - drift * .62) * w,
@@ -601,10 +687,9 @@
   function wake(x, y, size, strength, direction, index) {
     const isMint = index % 2 !== 0;
     const color = isMint ? '173,255,207' : '217,161,255';
-    const tail = direction * size * (.40 + cinemaEnergy * .12);
+    const tail = direction * size * (.42 + cinemaEnergy * .12);
     ctx.lineCap = 'round';
 
-    // Two tapered translucent arcs replace per-frame createLinearGradient()
     for (let band = 0; band < 2; band++) {
       const vertical = (band - .5) * size * .023;
       ctx.beginPath();
@@ -625,8 +710,10 @@
   }
 
   function arrivalGlow(size, elapsed) {
-    const phase = unit(elapsed / .64);
-    const glow = (1 - phase) ** 2;
+    const phase = unit(elapsed / .68);
+    // Smooth fade-in and fade-out (zero pop at phase = 0)
+    const glow = Math.sin(phase * Math.PI) * (1 - phase * .55);
+    if (glow <= .01) return;
     ctx.save();
     ctx.rotate(-.24);
     for (let ring = 0; ring < 2; ring++) {
@@ -634,8 +721,8 @@
       ctx.beginPath();
       ctx.ellipse(0, 0, radius, radius * .48, 0, 0, tau);
       ctx.strokeStyle = ring
-        ? 'rgba(173,255,207,' + (glow * .62).toFixed(3) + ')'
-        : 'rgba(217,161,255,' + (glow * .84).toFixed(3) + ')';
+        ? 'rgba(173,255,207,' + (glow * .58).toFixed(3) + ')'
+        : 'rgba(217,161,255,' + (glow * .78).toFixed(3) + ')';
       ctx.lineWidth = Math.max(1, size * .008 * glow);
       ctx.stroke();
     }
@@ -658,7 +745,7 @@
     if (!paintedRect.active) return;
     const px = paintedRect.x, py = paintedRect.y;
     const pr = px + paintedRect.w, pb = py + paintedRect.h;
-    const inset = 8;
+    const inset = 6;
 
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     for (let i = 0; i < cachedBlocks.length; i++) {
@@ -684,29 +771,26 @@
   }
 
   function draw(dt) {
-    if (!ready || width < 2 || height < 2) return;
-    const gentle = preference.matches;
+    if (!ready || width < 2 || height < 2 || !hero) return;
     const sy = window.scrollY;
     const progress = position;
     const t = clock;
     const chapter = updateChapter(progress);
-    const dest = computeStage(gentle, sy);
-    const area = resolveTravelingStage(dest, t, dt, sy, gentle);
+    const dest = computeTargetStage(sy);
+    const area = advanceRenderedStage(dest, dt);
     const formation = area.formation;
-    const isContact = area.isContact;
+    const contactMix = area.contact;
     const landed = t - arrival;
-    const orbiting = gentle ? 1 : (1 - smooth(formation * 4)) * smooth(landed / .80);
+    const orbiting = 1 - smooth(formation * 1.6);
     const energy = Math.sin(chapter.local * Math.PI) ** 2;
 
-    const margin = Math.ceil(area.w * 1.04 + 14);
+    const margin = Math.ceil(area.w * 1.08 + 16);
     const x = Math.max(0, Math.floor(area.x - margin));
     const y = Math.max(0, Math.floor(area.y - margin));
     const right = Math.min(width, Math.ceil(area.x + margin));
     const bottom = Math.min(height, Math.ceil(area.y + margin));
 
     clearPainting();
-    paintedScroll = sy;
-    clearedScroll = sy;
     if (right <= x || bottom <= y) {
       particleField.fill(0);
       window.dispatchEvent(particleEvent);
@@ -725,22 +809,26 @@
     ctx.rect(paintedRect.x, paintedRect.y, paintedRect.w, paintedRect.h);
     ctx.clip();
 
-    const drift = gentle ? 0 : (isContact ? .55 : 1);
-    const hoverX = Math.sin(t * .74) * area.w * .015 * drift;
-    const hoverY = Math.sin(t * .87) * area.w * .025 * drift;
+    // Continuous lively 3D levitation & subtle sway (always active, even at scrollY = 0)
+    const drift = mix(1, .62, contactMix);
+    const hoverX = Math.sin(t * .74) * area.w * .018 * drift;
+    const hoverY = Math.sin(t * .92) * area.w * .030 * drift;
     ctx.translate(area.x + hoverX, area.y + hoverY);
 
     if (area.rail < .72 && formation < .98) {
-      ctx.globalAlpha = (1 - formation * .84) * (isContact ? .94 : 1);
-      atmosphere(area.w, t, progress, energy, isContact);
+      ctx.globalAlpha = (1 - formation * .84) * mix(1, .94, contactMix);
+      atmosphere(area.w, t, progress, energy, contactMix);
       ctx.globalAlpha = 1;
     }
-    if (!gentle && landed < .64) arrivalGlow(area.w, landed);
+    if (landed >= 0 && landed < .68) arrivalGlow(area.w, landed);
 
-    const pointerTurn = gentle ? 0 : cursor.x * .035 + cursor.y * .012;
-    const groupTurn = isContact
-      ? (.04 * Math.sin(t * .65) * drift + pointerTurn * .5)
-      : (.09 * Math.sin(t * .84) * drift + pointerTurn) * Math.sin(progress * Math.PI) + .13 * Math.sin(progress * tau) * drift;
+    const pointerTurn = cursor.x * .038 + cursor.y * .014;
+    const idleSway = (.055 * Math.sin(t * .72) + .022 * Math.cos(t * .41)) * drift;
+    const normalTurn = idleSway
+      + (.065 * Math.sin(t * .88) * drift + pointerTurn) * (.45 + .55 * Math.sin(progress * Math.PI))
+      + .11 * Math.sin(progress * tau) * drift;
+    const contactTurn = .045 * Math.sin(t * .68) * drift + pointerTurn * .5;
+    const groupTurn = mix(normalTurn, contactTurn, contactMix);
     ctx.rotate(groupTurn * (1 - formation));
 
     // Reuse pre-allocated 4-pose object pool in-place (zero allocations)
@@ -748,16 +836,17 @@
       const p = art[i];
       const pose = poses[i];
       const beat = unit((chapter.local - i * .037) / (.87 - i * .037));
-      const openFactor = isContact ? .28 : (gentle ? .22 : 1);
+      const openFactor = mix(1, .30, contactMix);
       const open = (Math.sin(beat * Math.PI) ** 2) * openFactor * orbiting;
-      const breath = gentle ? .35 : (.5 - .5 * Math.cos(t * (1.38 + i * .094) + i * .64));
-      const spread = isContact
-        ? (.09 + .16 * breath * drift)
-        : (.12 + (.33 * breath + (1.03 + cinemaEnergy * .08) * open) * (gentle ? .45 : 1) * mix(.36, 1, orbiting));
-      const idle = gentle ? 0 : Math.sin(t * 1.47 + i * 1.71) * (.016 + .032 * open) * drift;
-      const ox = p.cx * (1 + spread) + Math.cos(i * 1.85 + t * .74) * .044 * open;
-      const oy = p.cy * (1 + spread) + idle - (i === 0 ? .050 : 0);
-      const turn = p.turn * (.08 + .74 * breath + open * (2.1 + .34 * Math.sin(chapter.index + i))) * (gentle ? .4 : drift);
+      const breath = .5 - .5 * Math.cos(t * (1.42 + i * .098) + i * .64);
+      const normalSpread = .13 + (.34 * breath + (1.02 + cinemaEnergy * .08) * open) * mix(.38, 1, orbiting);
+      const contactSpread = .10 + .18 * breath * drift;
+      const spread = mix(normalSpread, contactSpread, contactMix);
+      const idleX = Math.cos(t * 1.12 + i * 1.92) * (.011 + .034 * open) * drift;
+      const idleY = Math.sin(t * 1.48 + i * 1.68) * (.024 + .032 * open) * drift;
+      const ox = p.cx * (1 + spread) + idleX;
+      const oy = p.cy * (1 + spread) + idleY - (i === 0 ? .050 : 0);
+      const turn = p.turn * (.12 + .78 * breath + open * (2.05 + .34 * Math.sin(chapter.index + i))) * drift;
       const fit = 1 - .31 * open;
       const inset = .92 - .09 * open;
       const scale = area.w * mix(fit * inset, .41, formation);
@@ -771,7 +860,7 @@
       pose.h = p.height * scale;
     }
 
-    if (!gentle && formation > .01) {
+    if (formation > .02) {
       for (let i = 0; i < poses.length; i++) {
         wake(poses[i].x, poses[i].y, area.w, formation, area.direction, i);
       }
@@ -781,9 +870,14 @@
     for (let i = 0; i < poses.length; i++) {
       const p = poses[i];
       const offset = i * 3;
-      particleField[offset] = (world.a * p.x + world.c * p.y + world.e) / ratio;
-      particleField[offset + 1] = (world.b * p.x + world.d * p.y + world.f) / ratio;
+      const wx = (world.a * p.x + world.c * p.y + world.e) / ratio;
+      const wy = (world.b * p.x + world.d * p.y + world.f) / ratio;
+      particleField[offset] = wx;
+      particleField[offset + 1] = wy;
       particleField[offset + 2] = Math.max(p.w, p.h) * .55;
+
+      debugState.pieces[i][0] = wx;
+      debugState.pieces[i][1] = wy;
 
       if (!p.image) continue;
       ctx.save();
@@ -795,38 +889,32 @@
 
     ctx.restore();
     clearTextOverlap(sy);
+
+    frameCount++;
+    debugState.x = area.x;
+    debugState.y = area.y;
+    debugState.w = area.w;
+    debugState.t = t;
+    debugState.frame = frameCount;
+    debugState.formation = formation;
+    debugState.contact = contactMix;
+
     window.dispatchEvent(particleEvent);
   }
 
   function schedule() {
     if (!document.hidden && !frame && ready) {
-      if (preference.matches && !reducedDirty) return;
       frame = requestAnimationFrame(tick);
     }
   }
 
+  // Full native 60fps+ continuous animation loop (pauses only when document.hidden)
   function tick(now) {
     frame = 0;
     if (document.hidden || !ready) return;
 
-    if (preference.matches) {
-      reducedDirty = false;
-      position = target;
-      previous = now;
-      draw(.016);
-      return;
-    }
-
-    const elapsed = now - (previous || now - 33);
-    const activeMotion = cinemaPlaying || !!transfer || Math.abs(position - target) > .001 || (now - lastScroll < 200);
-    // Fluid 60fps during cinema mode / scrolling / transfers; efficient ~30fps when idle.
-    const minInterval = activeMotion ? 13 : 32;
-    if (paintedScroll === window.scrollY && elapsed < minInterval) {
-      schedule();
-      return;
-    }
-
-    const dt = Math.min(85, Math.max(1, elapsed)) / 1000;
+    const elapsed = previous ? (now - previous) : 16.667;
+    const dt = Math.min(.034, Math.max(.001, elapsed / 1000));
     previous = now;
 
     // Smoothly damp cinema energy and scroll velocity for silky transitions
@@ -838,7 +926,7 @@
     const speedBoost = 1 + cinemaEnergy * (.18 * cinemaSpeed) + scrollVelocity * .24;
     clock += dt * speedBoost;
 
-    const trackRate = cinemaPlaying ? 14 : 9.5;
+    const trackRate = cinemaPlaying ? 12 : 9;
     position += (target - position) * (1 - Math.exp(-dt * trackRate));
     if (Math.abs(position - target) < .00035) position = target;
 
@@ -852,11 +940,6 @@
 
   function handleProgress(progressValue, velocityValue) {
     const sy = window.scrollY;
-    if (paintedRect.active && paintedScroll !== sy && clearedScroll !== sy) {
-      clearedScroll = sy;
-      clearTextOverlap(sy);
-    }
-    lastScroll = performance.now();
     if (Number.isFinite(progressValue)) {
       target = unit(progressValue);
     } else {
@@ -865,7 +948,6 @@
     if (Number.isFinite(velocityValue)) {
       scrollVelocity = Math.max(scrollVelocity, unit(velocityValue));
     }
-    reducedDirty = true;
     schedule();
   }
 
@@ -875,7 +957,6 @@
     cinemaPlaying = detail.state === 'playing';
     if (Number.isFinite(detail.speed) && detail.speed > 0) cinemaSpeed = detail.speed;
     if (Number.isFinite(detail.progress)) target = unit(detail.progress);
-    reducedDirty = true;
     schedule();
   });
 
@@ -893,7 +974,7 @@
   }, { passive: true });
 
   window.addEventListener('pointermove', e => {
-    if (preference.matches || e.pointerType === 'touch' || width <= 0 || height <= 0) return;
+    if (e.pointerType === 'touch' || width <= 0 || height <= 0) return;
     cursor.tx = Math.max(-1, Math.min(1, 2 * e.clientX / width - 1));
     cursor.ty = Math.max(-1, Math.min(1, 2 * e.clientY / height - 1));
   }, { passive: true });
@@ -904,18 +985,7 @@
     if (frame) cancelAnimationFrame(frame);
     frame = 0;
     previous = 0;
-    if (!document.hidden) {
-      reducedDirty = true;
-      schedule();
-    }
-  });
-
-  preference.addEventListener('change', () => {
-    if (frame) cancelAnimationFrame(frame);
-    frame = 0;
-    previous = 0;
-    reducedDirty = true;
-    schedule();
+    if (!document.hidden) schedule();
   });
 
   window.addEventListener('resize', measure, { passive: true });
@@ -932,7 +1002,6 @@
     img.src = new URL(p.file, artBase).href;
   }))).then(() => {
     ready = true;
-    reducedDirty = true;
     schedule();
   }).catch(error => console.error(error));
 })();
