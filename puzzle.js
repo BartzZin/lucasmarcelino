@@ -101,48 +101,56 @@
   const particleField = new Float32Array(art.length * 3);
   const particleEvent = new CustomEvent('cv-puzzle-field', { detail: particleField });
   const chapterState = { index: 0, local: 0 };
-  const pathSample = {
+  const areaOut = {
     x: 0,
-    docY: 0,
     visY: 0,
     w: 0,
     formation: 0,
     rail: 0,
     direction: 1,
     contact: 0,
-    inCorridor: false
-  };
-  const nextSample = {
-    x: 0,
-    docY: 0,
-    visY: 0,
-    w: 0,
-    formation: 0,
-    rail: 0,
-    direction: 1,
-    contact: 0,
-    inCorridor: false
+    inCorridor: false,
+    safeLaneX: 0
   };
   const axisOut = { pos: 0, vel: 0 };
-  const pathSpring = {
-    s: 0,
-    vs: 0,
+
+  // Autonomous corridor flight + smooth viewport-space motion state
+  // Decoupled from chunky 100px mouse-wheel steps so crossings NEVER teleport or park mid-corridor!
+  const nav = {
+    initialized: false,
+    chapter: 0,          // Committed endpoint chapter index (desktop: 0..N-1; mobile: -1=hero, 0..N-1)
+    x: 0,
+    vx: 0,
+    visY: 0,
+    vy: 0,
+    w: 0,
     formation: 0,
+    rail: 0,
     direction: 1,
     contact: 0,
-    rail: 0,
-    initialized: false
-  };
-  const scrollCommit = {
+    haloScale: 1,
     lastSy: -1,
-    lastMoveDir: 1,
-    idleTime: 0,
-    active: false,
-    corridorIndex: -1,
-    committedS: 0,
-    anchorSy: 0
+    scrollDir: 1,
+    // Autonomous corridor crossing flight
+    flightActive: false,
+    flightCorridorIdx: -1,
+    flightFromChapter: 0,
+    flightToChapter: 0,
+    flightU: 0,          // Smooth continuous 0 -> 1 progress
+    flightTargetU: 1,    // 1 = forward to flightToChapter, 0 = smooth reversal back to flightFromChapter
+    flightSpeedU: 0,     // Current dU/dt for C1 smooth reversal & acceleration
+    flightFromX: 0,
+    flightToX: 0,
+    flightFromVisY: 0,
+    flightExitVisY: 0,
+    flightExitCaptured: false,
+    flightFromW: 0,
+    flightToW: 0,
+    flightDir: 1,
+    flightIsMobileArch: false,
+    flightIsMobileHero: false,
+    flightArrivalFired: false
   };
-  const paintedRect = { x: 0, y: 0, w: 0, h: 0, active: false };
 
   // Pre-allocated live viewport obstacle boxes
   const MAX_LIVE_OBS = 64;
@@ -159,6 +167,8 @@
     formation: 0,
     contact: 0,
     haloRadius: 0,
+    chapter: 0,
+    corridorActive: false,
     pieces: [
       { x: 0, y: 0, r: 0 },
       { x: 0, y: 0, r: 0 },
@@ -179,14 +189,19 @@
   const PIECE_PAD = 10;
 
   let width = 0, height = 0, ratio = 1, distance = 1, readingHeight = 800;
+  let lastWinW = 0, lastWinH = 0, lastDpr = 0, contentRefW = 1280;
   let layout = [], corridors = [], marks = [0, 1];
-  let hero = null, flight = null, mobileLane = null;
+  let hero = null, flightSlot = null, mobileLane = null;
   let cachedObstacles = [];
   let headerSafeBottom = 76;
   let target = 0, position = 0, clock = .4, previous = 0, frame = 0, frameCount = 0, ready = false;
   let arrival = -10;
   let cinemaPlaying = false, cinemaEnergy = 0, cinemaSpeed = 1, scrollVelocity = 0;
   const cursor = { x: 0, y: 0, tx: 0, ty: 0 };
+
+  function getFocusRatio() {
+    return width <= 800 ? .50 : .52;
+  }
 
   // Reads untransformed rest-state document box (compensating scroll.js --text-shift/--text-scale)
   function getRestDocRect(el, sy) {
@@ -295,6 +310,25 @@
     return liveHudTop;
   }
 
+  // Query live viewport gap bounds [gapTopVis, gapBottomVis] accounting for any CSS scroll transforms
+  function getLiveCorridorGapVis(c, sy) {
+    let topVis = c.gapTop - sy;
+    let bottomVis = c.gapBottom - sy;
+    if (c.upperEl) {
+      const ur = c.upperEl.getBoundingClientRect();
+      if (ur.height > 0) topVis = Math.max(topVis, ur.bottom);
+    }
+    if (c.lowerEl) {
+      const lr = c.lowerEl.getBoundingClientRect();
+      if (lr.height > 0) bottomVis = Math.min(bottomVis, lr.top);
+    }
+    if (bottomVis < topVis + 48) {
+      topVis = c.gapTop - sy;
+      bottomVis = c.gapBottom - sy;
+    }
+    return { topVis, bottomVis, midVis: (topVis + bottomVis) * .5 };
+  }
+
   function buildCorridors() {
     const list = [];
     if (!hero || !layout.length) {
@@ -303,10 +337,7 @@
     }
 
     const isMobile = width <= 800;
-    const focusRatio = isMobile ? .44 : .46;
-    const halfBand = isMobile
-      ? Math.min(96, Math.max(66, height * .115))
-      : Math.min(168, Math.max(96, readingHeight * .21));
+    const focusRatio = getFocusRatio();
     const maxFocus = distance + readingHeight * focusRatio;
 
     // Corridor 0: Hero -> Chapter 0 (#trajetoria)
@@ -315,33 +346,33 @@
       const bayTop = hero.docBottom + 10;
       const bayBottom = first.contentTop - 10;
       const bayMid = (bayTop + bayBottom) * .5;
-      // Start gliding right early inside .mobile-flight and finish entering the right lane
-      // BEFORE #trajetoria h2 reaches the upper viewport!
-      const heroStart = Math.min(bayMid - 18, readingHeight * focusRatio + 24);
-      const heroEnd = Math.max(heroStart + 96, first.contentTop - 22);
       list.push({
-        start: heroStart,
-        end: heroEnd,
+        fromChapter: -1,
+        toChapter: 0,
         gapTop: bayTop,
         gapBottom: bayBottom,
         gapMid: bayMid,
+        triggerY: Math.max(readingHeight * focusRatio + 160, bayMid - 40),
         crossSide: true,
-        isHeroExit: true
+        isHeroExit: true,
+        upperEl: intro,
+        lowerEl: first.firstEl
       });
     } else {
       const gapTop = hero.docBottom;
       const gapBottom = first.contentTop;
       const gapMid = (gapTop + gapBottom) * .5;
-      const start = Math.max(readingHeight * focusRatio + 18, hero.docTop + hero.h * .55);
-      const end = Math.max(start + 120, first.contentTop + 72);
       list.push({
-        start,
-        end,
+        fromChapter: -1,
+        toChapter: 0,
         gapTop,
         gapBottom,
         gapMid,
+        triggerY: gapMid,
         crossSide: first.side !== 1,
-        isHeroExit: true
+        isHeroExit: true,
+        upperEl: intro,
+        lowerEl: first.firstEl
       });
     }
 
@@ -352,39 +383,25 @@
       const gapTop = prev.contentBottom;
       const gapBottom = next.contentTop;
       const gapMid = (gapTop + gapBottom) * .5;
-      let start = gapMid - halfBand;
-      let end = gapMid + halfBand;
+      let triggerY = gapMid;
 
       if (next.isContact) {
-        const panelCenter = (next.contentTop + next.contentBottom) * .5;
-        const restSy = clamp(panelCenter - height * .5, 0, distance);
-        const restFocus = Math.min(maxFocus, restSy + readingHeight * focusRatio);
-        // Finish crossing strictly ABOVE .contact-panel.top and before restFocus/maxFocus
-        end = Math.min(gapBottom - 20, restFocus - 24);
-        start = Math.max(prev.contentTop + 56, end - halfBand * 1.85);
+        // Ensure contact crest flight always triggers comfortably before bottom of page
+        triggerY = Math.min(gapMid, maxFocus - (isMobile ? 68 : 110));
       }
 
-      if (end < start + 64) end = start + 64;
       list.push({
-        start,
-        end,
+        fromChapter: i - 1,
+        toChapter: i,
         gapTop,
         gapBottom,
         gapMid,
+        triggerY,
         crossSide: isMobile ? true : (prev.side !== next.side),
-        isHeroExit: false
+        isHeroExit: false,
+        upperEl: prev.lastEl,
+        lowerEl: next.firstEl
       });
-    }
-
-    // Strictly non-overlapping corridor bands for C1 continuity
-    for (let i = 0; i < list.length - 1; i++) {
-      const a = list[i];
-      const b = list[i + 1];
-      if (a.end > b.start - 12) {
-        const split = (a.end + b.start) * .5;
-        a.end = Math.max(a.start + 36, split - 6);
-        b.start = Math.min(b.end - 36, split + 6);
-      }
     }
 
     corridors = list;
@@ -396,26 +413,33 @@
     height = bounds.height;
     if (!width || !height) return;
 
-    ratio = Math.min(1.75, window.devicePixelRatio || 1);
+    lastWinW = window.innerWidth;
+    lastWinH = window.innerHeight;
+    lastDpr = window.devicePixelRatio || 1;
+
+    ratio = Math.min(1.75, Math.max(.25, lastDpr));
     ratio = Math.min(ratio, Math.sqrt(4_500_000 / (width * height)));
     const pw = Math.max(1, Math.round(width * ratio));
     const ph = Math.max(1, Math.round(height * ratio));
     if (canvas.width !== pw || canvas.height !== ph) {
       canvas.width = pw;
       canvas.height = ph;
-      paintedRect.active = false;
     }
+    // Always wipe the entire backing buffer cleanly on every measure/zoom/resize (zero stale ghosts!)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const sy = window.scrollY;
     const isMobile = width <= 800;
     const contentBox = main.getBoundingClientRect();
+    contentRefW = clamp(contentBox.width || width, 320, 1360);
     const introRect = intro
       ? getRestDocRect(intro, sy)
       : { left: contentBox.left, right: contentBox.left + contentBox.width * .6, docTop: 0, docBottom: height * .8, width: contentBox.width * .6, height: height * .8 };
 
-    // Hero open lane (desktop right of .intro)
+    // Hero open lane (desktop right of .intro; stays gracefully paired near content column when zoomed out)
     const heroLaneLeft = introRect.right + LANE_PAD;
-    const heroLaneRight = width - EDGE_PAD;
+    const heroLaneRight = Math.min(width - EDGE_PAD, Math.max(heroLaneLeft + 120, contentBox.right + 140));
     const heroUsableW = Math.max(72, heroLaneRight - heroLaneLeft);
     hero = {
       x: (heroLaneLeft + heroLaneRight) * .5,
@@ -429,7 +453,7 @@
 
     const slotEl = main.querySelector('.mobile-flight');
     const slotRect = slotEl ? slotEl.getBoundingClientRect() : null;
-    flight = slotRect && slotRect.height > 20
+    flightSlot = slotRect && slotRect.height > 20
       ? {
           x: width * .5,
           docTop: slotRect.top + sy,
@@ -459,11 +483,13 @@
       let maxBottom = -Infinity;
       let minLeft = Infinity;
       let maxRight = -Infinity;
+      let firstEl = contentEl;
+      let lastEl = contentEl;
       for (let j = 0; j < innerNodes.length; j++) {
         const rr = getRestDocRect(innerNodes[j], sy);
         if (rr.width <= 0 || rr.height <= 0) continue;
-        if (rr.docTop < minTop) minTop = rr.docTop;
-        if (rr.docBottom > maxBottom) maxBottom = rr.docBottom;
+        if (rr.docTop < minTop) { minTop = rr.docTop; firstEl = innerNodes[j]; }
+        if (rr.docBottom > maxBottom) { maxBottom = rr.docBottom; lastEl = innerNodes[j]; }
         if (rr.left < minLeft) minLeft = rr.left;
         if (rr.right > maxRight) maxRight = rr.right;
       }
@@ -483,10 +509,10 @@
         const prevBottom = layout.length ? layout[layout.length - 1].contentBottom : secBox.top + sy;
         const gapAbove = Math.max(40, minTop - prevBottom);
         const contactW = Math.min(
-          Math.max(104, (gapAbove - 36) / 1.44),
-          readingHeight * .30,
-          (maxRight - minLeft) * .30,
-          216
+          Math.max(104, (gapAbove - 42) / 1.48),
+          readingHeight * .29,
+          (maxRight - minLeft) * .29,
+          210
         );
         layout.push({
           top: secBox.top + sy,
@@ -495,6 +521,8 @@
           contentBottom: maxBottom,
           contentLeft: minLeft,
           contentRight: maxRight,
+          firstEl,
+          lastEl,
           x: (minLeft + maxRight) * .5,
           usableW: Math.max(80, width - EDGE_PAD * 2),
           side: 0,
@@ -504,13 +532,20 @@
         });
       } else {
         const onLeft = (minLeft + maxRight) < (contentBox.left + contentBox.right);
-        const laneLeft = onLeft ? (maxRight + LANE_PAD) : EDGE_PAD;
-        const laneRight = onLeft ? (width - EDGE_PAD) : (minLeft - LANE_PAD);
+        const laneLeft = onLeft
+          ? (maxRight + LANE_PAD)
+          : Math.max(EDGE_PAD, Math.min(minLeft - LANE_PAD - 120, contentBox.left - 140));
+        const laneRight = onLeft
+          ? Math.min(width - EDGE_PAD, Math.max(maxRight + LANE_PAD + 120, contentBox.right + 140))
+          : (minLeft - LANE_PAD);
         const usableW = Math.max(64, laneRight - laneLeft);
+        // Keep full orbiting cluster comfortably inside [safeMin + 14, safeMax - 14] and balanced even at 33%-50% zoom
         const laneW = Math.min(
-          usableW / 1.44,
-          readingHeight * .48,
-          Math.max(140, maxBottom - minTop) * .55
+          usableW / 1.60,
+          readingHeight * .42,
+          Math.max(140, maxBottom - minTop) * .52,
+          contentRefW * .32,
+          390
         );
         layout.push({
           top: secBox.top + sy,
@@ -519,6 +554,8 @@
           contentBottom: maxBottom,
           contentLeft: minLeft,
           contentRight: maxRight,
+          firstEl,
+          lastEl,
           x: (laneLeft + laneRight) * .5,
           usableW,
           side: onLeft ? 1 : -1,
@@ -536,8 +573,7 @@
       mobileLane = {
         x: (mLeft + mRight) * .5,
         usableW: mUsable,
-        // Vertical 4-piece ribbon fits effortlessly inside mobile right lane
-        railW: clamp(mUsable * 1.48, 44, 88)
+        railW: clamp(mUsable * 1.42, 44, 84)
       };
     } else {
       mobileLane = null;
@@ -548,15 +584,19 @@
     distance = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
     marks = [0];
     for (let i = 0; i < layout.length; i++) {
-      const mark = unit((layout[i].top - readingHeight * .46) / distance);
+      const mark = unit((layout[i].top - readingHeight * getFocusRatio()) / distance);
       if (mark > marks[marks.length - 1] + .028 && mark < .96) marks.push(mark);
     }
     marks.push(1);
 
     buildCorridors();
 
-    scrollCommit.active = false;
-    scrollCommit.corridorIndex = -1;
+    // Re-sync lane X/Y cleanly on resize or zoom without mid-corridor glitch
+    if (nav.initialized) {
+      nav.flightActive = false;
+      nav.flightCorridorIdx = -1;
+      nav.initialized = false;
+    }
 
     target = unit(sy / distance);
     schedule();
@@ -583,8 +623,8 @@
       const wingLeft = EDGE_PAD;
       const wingRight = row.contentLeft - LANE_PAD;
       const wingW = Math.max(80, wingRight - wingLeft);
-      const fittedW = Math.min(wingW / 1.44, 152);
-      const visMid = clamp((headerSafeBottom + hudTop) * .5, headerSafeBottom + fittedW * .70 + 10, hudTop - fittedW * .70 - 10);
+      const fittedW = Math.min(wingW / 1.54, 148);
+      const visMid = clamp((headerSafeBottom + hudTop) * .5, headerSafeBottom + fittedW * .68 + 10, hudTop - fittedW * .68 - 10);
       return {
         x: (wingLeft + wingRight) * .5,
         bayTopDoc,
@@ -600,576 +640,685 @@
     const bayMidDoc = bayH > 0
       ? (bayTopDoc + bayBottomDoc) * .5
       : Math.min(row.contentTop - 36, sy + visHeaderClear + 28);
-    const maxWFromHeight = Math.max(64, (clampedBayH - 14) / 1.40);
-    const maxWFromWidth = (width - EDGE_PAD * 2 - 16) / 1.44;
-    const fittedW = Math.min(row.contactW, maxWFromHeight, maxWFromWidth, isMobile ? 156 : 212);
+    const maxWFromHeight = Math.max(64, (clampedBayH - 18) / 1.44);
+    const maxWFromWidth = (width - EDGE_PAD * 2 - 20) / 1.54;
+    const fittedW = Math.min(row.contactW, maxWFromHeight, maxWFromWidth, isMobile ? 152 : 206);
     const compact = clampedBayH < 128 ? smooth((128 - clampedBayH) / 56) * .55 : 0;
     return { x: row.x, bayTopDoc, bayBottomDoc, bayH: clampedBayH, bayMidDoc, fittedW, compact };
   }
 
-  function heroStationW() {
-    return Math.min(hero.usableW / 1.44, hero.h * .60, readingHeight * .56);
+  function heroStationW(hudTop) {
+    const availH = Math.max(180, hudTop - headerSafeBottom - 40);
+    return Math.min(hero.usableW / 1.54, hero.h * .56, readingHeight * .52, availH / 1.44, contentRefW * .36, 460);
   }
 
-  // Evaluate 100% obstacle-free 1D corridor-locked path at scalar document parameter `s`
-  function evalSafePath(s, sy, hudTop, out) {
-    const isMobile = width <= 800;
-
-    if (isMobile) {
-      evalMobileSafePath(s, sy, hudTop, out);
-      return out;
+  function computeCorridorW(c, prev, next) {
+    const gapH = Math.max(64, c.gapBottom - c.gapTop);
+    if (width <= 800) {
+      const maxHorizW = Math.max(100, (width - 36) / 2.06);
+      const maxGapW = Math.max(100, (gapH - 42) / .48);
+      return Math.min(maxHorizW, maxGapW, 152);
     }
-
-    const heroW = heroStationW();
-    const heroMinDocY = headerSafeBottom + heroW * .70 + 10;
-    const heroDocY = Math.max(heroMinDocY, hero.docTop + hero.h * .49);
-
-    if (!corridors.length || s <= corridors[0].start) {
-      out.x = hero.x;
-      out.docY = heroDocY;
-      out.visY = out.docY - sy;
-      out.w = heroW;
-      out.formation = 0;
-      out.rail = 0;
-      out.direction = 1;
-      out.contact = 0;
-      out.inCorridor = false;
-      return out;
-    }
-
-    for (let k = 0; k < corridors.length; k++) {
-      const c = corridors[k];
-      const next = layout[Math.min(layout.length - 1, k)];
-      const prev = k === 0 ? null : layout[k - 1];
-
-      if (s < c.end) {
-        const u = unit((s - c.start) / Math.max(1, c.end - c.start));
-
-        if (!c.crossSide) {
-          // Same-side transition (Hero -> #trajetoria, both in Right lane)
-          const endDocY = clamp(c.end, next.contentTop + 36, next.contentBottom - 36);
-          const curDocY = mix(heroDocY, endDocY, smooth(u));
-          // Only shift X from heroLane to trajLane once clear of .intro bottom
-          const clearT = smooth((curDocY - (hero.docBottom - 10)) / 90);
-          out.x = mix(hero.x, next.x, clearT);
-          out.docY = curDocY;
-          out.visY = out.docY - sy;
-          out.w = mix(heroW, next.laneW, smooth(u));
-          out.formation = 0;
-          out.rail = 0;
-          out.direction = 1;
-          out.contact = 0;
-          out.inCorridor = false;
-          return out;
-        }
-
-        // Cross-side corridor: 3-phase locked highway through open inter-section sky!
-        // Phase 1 [0..0.22]: Stay in prev side lane, descend to gapMid, compact to horizontal stream.
-        // Phase 2 [0.22..0.78]: LOCK Y strictly inside [gapTop, gapBottom] & [header, hud], glide X across!
-        // Phase 3 [0.78..1.00]: Stay in next side lane (or contact center), unfurl & settle.
-        const startX = prev ? prev.x : hero.x;
-        const startW = prev ? prev.laneW : heroW;
-        const startDocY = prev
-          ? clamp(c.start, prev.contentTop + 32, Math.max(prev.contentTop + 32, Math.min(c.gapMid, prev.contentBottom - 32)))
-          : heroDocY;
-
-        let endX = next.x;
-        let endW = next.laneW;
-        let endDocY = clamp(c.end, Math.min(next.contentBottom - 32, Math.max(c.gapMid, next.contentTop + 32)), Math.max(next.contentTop + 32, next.contentBottom - 32));
-        let lockedDocY = c.gapMid;
-        let endCompact = 0;
-
-        if (next.isContact) {
-          const bay = computeContactBay(next, sy, hudTop);
-          endX = bay.x;
-          endW = bay.fittedW;
-          endDocY = bay.bayMidDoc;
-          lockedDocY = clamp(bay.bayMidDoc, c.gapTop + 34, c.gapBottom - 34);
-          endCompact = bay.compact;
-        }
-
-        const gapH = Math.max(64, c.gapBottom - c.gapTop);
-        // Size crossing pieces directly from actual open gapH & side-lane width (bold, clear, zero clumping)
-        const startLaneW = prev ? prev.usableW : hero.usableW;
-        const endLaneW = next.isContact ? (width - EDGE_PAD * 2) : next.usableW;
-        const maxHorizW = Math.max(120, (Math.min(startLaneW, endLaneW) * .5 - 12) / 1.02);
-        const maxGapW = Math.max(110, (gapH - 40) / .56);
-        const corridorCap = Math.min(268, readingHeight * .34);
-        const corridorW = Math.min(maxGapW, maxHorizW, corridorCap);
-        const streamHalfH = corridorW * .28 + 20;
-        const gapMinDocY = c.gapTop + streamHalfH;
-        const gapMaxDocY = Math.max(gapMinDocY, c.gapBottom - streamHalfH);
-        const safeMinDocY = Math.max(gapMinDocY, sy + headerSafeBottom + streamHalfH);
-        const safeMaxDocY = Math.min(gapMaxDocY, sy + hudTop - streamHalfH);
-        if (safeMaxDocY >= safeMinDocY) {
-          lockedDocY = clamp(lockedDocY, safeMinDocY, safeMaxDocY);
-        } else {
-          // NEVER leave the physical inter-section corridor [gapMinDocY, gapMaxDocY]!
-          lockedDocY = clamp(lockedDocY, gapMinDocY, gapMaxDocY);
-        }
-
-        const dir = Math.sign(endX - startX) || 1;
-        out.direction = dir;
-        out.rail = 0;
-
-        if (u < .20) {
-          const p1 = smooth(u / .20);
-          out.x = startX;
-          out.docY = mix(startDocY, lockedDocY, p1);
-          out.w = mix(startW, corridorW, p1);
-          out.formation = p1;
-          out.contact = 0;
-          out.inCorridor = p1 > .25;
-        } else if (u <= .80) {
-          const p2 = smooth((u - .20) / .60);
-          out.x = mix(startX, endX, p2);
-          out.docY = lockedDocY;
-          out.w = corridorW;
-          out.formation = 1;
-          out.contact = next.isContact ? p2 * .5 : 0;
-          out.inCorridor = true;
-        } else {
-          const p3 = smooth((u - .80) / .20);
-          out.x = endX;
-          out.docY = mix(lockedDocY, endDocY, p3);
-          out.w = mix(corridorW, endW, p3);
-          out.formation = mix(1, endCompact, p3);
-          out.contact = next.isContact ? mix(.5, 1, p3) : 0;
-          out.inCorridor = p3 < .75;
-        }
-
-        out.visY = out.docY - sy;
-        return out;
-      }
-
-      // Resting / cruising inside chapter `next` side lane (strictly between corridors)
-      if (k === corridors.length - 1 || s <= corridors[k + 1].start) {
-        if (next.isContact) {
-          const bay = computeContactBay(next, sy, hudTop);
-          out.x = bay.x;
-          out.docY = bay.bayMidDoc;
-          out.visY = out.docY - sy;
-          out.w = bay.fittedW;
-          out.formation = bay.compact;
-          out.rail = 0;
-          out.direction = 1;
-          out.contact = 1;
-          out.inCorridor = false;
-          return out;
-        }
-
-        const segStart = c.end;
-        const segEnd = k < corridors.length - 1 ? corridors[k + 1].start : next.contentBottom;
-        const segLen = Math.max(1, segEnd - segStart);
-        const segT = unit((s - segStart) / segLen);
-        // Gentle editorial wave that vanishes smoothly at both corridor boundaries
-        const waveEnv = Math.sin(segT * Math.PI);
-        const wave = Math.sin(segT * tau) * 14 * waveEnv * waveEnv;
-
-        const minDoc = next.contentTop + 32;
-        const maxDoc = Math.max(minDoc, next.contentBottom - 32);
-        let docY = clamp(s + wave, minDoc, maxDoc);
-
-        // Keep comfortably inside visible vertical viewport bounds AND clear of opposite-side chapters above/below
-        const halfH = next.laneW * .66 + 12;
-        const laneCeil = (prev && prev.side !== next.side) ? (c.gapTop + halfH) : (hero.docTop + halfH);
-        const nextCorr = k < corridors.length - 1 ? corridors[k + 1] : null;
-        const nextChap = k < layout.length - 1 ? layout[k + 1] : null;
-        const laneFloor = (nextCorr && nextChap && nextChap.side !== next.side)
-          ? (nextCorr.gapBottom - halfH)
-          : maxDoc;
-        const visMin = sy + headerSafeBottom + halfH;
-        const visMax = sy + hudTop - halfH;
-        const lo = Math.max(laneCeil, visMin);
-        const hi = Math.min(laneFloor, visMax);
-        if (hi >= lo) {
-          docY = clamp(docY, lo, hi);
-        } else {
-          const physLo = Math.min(laneCeil, laneFloor);
-          const physHi = Math.max(laneCeil, laneFloor);
-          docY = clamp(docY, physLo, physHi);
-        }
-
-        out.x = next.x;
-        out.docY = docY;
-        out.visY = docY - sy;
-        out.w = next.laneW;
-        out.formation = 0;
-        out.rail = 0;
-        out.direction = 1;
-        out.contact = 0;
-        out.inCorridor = false;
-        return out;
-      }
-    }
-
-    // Fallback to last station
-    const last = layout[layout.length - 1];
-    const bay = computeContactBay(last, sy, hudTop);
-    out.x = bay.x;
-    out.docY = bay.bayMidDoc;
-    out.visY = out.docY - sy;
-    out.w = bay.fittedW;
-    out.formation = bay.compact;
-    out.rail = 0;
-    out.direction = 1;
-    out.contact = 1;
-    out.inCorridor = false;
+    const startLaneW = prev ? prev.usableW : hero.usableW;
+    const endLaneW = next.isContact ? (width - EDGE_PAD * 2) : next.usableW;
+    // Outermost crossing piece reach = 0.78*w + 0.22*w = 1.00*w; vertical reach = 0.22*w + wave + pad
+    const maxHorizW = Math.max(120, Math.min(startLaneW, endLaneW) * .5 - 24);
+    const maxGapW = Math.max(120, (gapH - 60) / .48);
+    const corridorCap = Math.min(256, readingHeight * .335, contentRefW * .22);
+    return Math.min(maxGapW, maxHorizW, corridorCap);
   }
 
-  // Mobile 1D safe path: Hero bay -> open right vertical lane -> open inter-section corridors -> Contact bay
-  function evalMobileSafePath(s, sy, hudTop, out) {
-    const first = layout[0];
-    const bayTop = hero.docBottom + 12;
-    const bayBottom = first ? first.contentTop - 12 : (flight ? flight.docBottom - 12 : bayTop + 200);
-    const bayH = Math.max(80, bayBottom - bayTop);
-    const bayMid = (bayTop + bayBottom) * .5;
-    const heroBayW = Math.min((width - 36) / 1.44, (bayH - 20) / 1.44, 210);
-    const mLaneX = mobileLane ? mobileLane.x : width - 38;
-    const mRailW = mobileLane ? mobileLane.railW : 58;
-
-    if (!corridors.length || s <= corridors[0].start) {
-      out.x = width * .5;
-      out.docY = bayMid;
-      out.visY = bayMid - sy;
-      out.w = heroBayW;
-      out.formation = 0;
-      out.rail = 0;
-      out.direction = 1;
-      out.contact = 0;
-      out.inCorridor = false;
-      return out;
-    }
-
-    for (let k = 0; k < corridors.length; k++) {
-      const c = corridors[k];
-      const next = layout[Math.min(layout.length - 1, k)];
-
-      if (s < c.end) {
-        const u = unit((s - c.start) / Math.max(1, c.end - c.start));
-
-        // Corridor 0: Mobile Hero bay -> Right open lane (glide right strictly inside .mobile-flight!)
-        if (c.isHeroExit) {
-          const safeExitDocY = clamp(bayMid + 18, bayTop + 34, Math.max(bayTop + 34, bayBottom - 34));
-          const enterLaneDocY = clamp(next.contentTop + 26, safeExitDocY, Math.max(safeExitDocY, next.contentBottom - 26));
-          if (u < .68) {
-            const p1 = smooth(u / .68);
-            out.x = mix(width * .5, mLaneX, p1);
-            out.docY = mix(bayMid, safeExitDocY, p1);
-            out.w = mix(heroBayW, mRailW, p1);
-            out.formation = Math.sin(p1 * Math.PI) * .60;
-            out.rail = p1;
-            out.direction = 1;
-            out.contact = 0;
-            out.inCorridor = true;
-          } else {
-            const p2 = smooth((u - .68) / .32);
-            out.x = mLaneX;
-            out.docY = mix(safeExitDocY, enterLaneDocY, p2);
-            out.w = mRailW;
-            out.formation = 0;
-            out.rail = 1;
-            out.direction = 1;
-            out.contact = 0;
-            out.inCorridor = false;
-          }
-          out.visY = out.docY - sy;
-          return out;
-        }
-
-        // Last corridor: Right open lane -> Mobile Contact bay above .contact-panel
-        if (next.isContact) {
-          const bay = computeContactBay(next, sy, hudTop);
-          const startDocY = clamp(c.start, layout[k - 1].contentTop + 32, bay.bayMidDoc);
-          const lockedDocY = clamp(bay.bayMidDoc, c.gapTop + 30, c.gapBottom - 30);
-          if (u < .24) {
-            const p1 = smooth(u / .24);
-            out.x = mLaneX;
-            out.docY = mix(startDocY, lockedDocY, p1);
-            out.w = mRailW;
-            out.formation = 0;
-            out.rail = 1;
-            out.direction = -1;
-            out.contact = 0;
-            out.inCorridor = false;
-          } else if (u <= .76) {
-            const p2 = smooth((u - .24) / .52);
-            out.x = mix(mLaneX, width * .5, p2);
-            out.docY = lockedDocY;
-            out.w = mix(mRailW, Math.min(bay.fittedW, 132), p2);
-            out.formation = Math.sin(p2 * Math.PI) * .85;
-            out.rail = 1 - p2;
-            out.direction = -1;
-            out.contact = p2 * .6;
-            out.inCorridor = true;
-          } else {
-            const p3 = smooth((u - .76) / .24);
-            out.x = width * .5;
-            out.docY = mix(lockedDocY, bay.bayMidDoc, p3);
-            out.w = mix(Math.min(bay.fittedW, 132), bay.fittedW, p3);
-            out.formation = mix(0, bay.compact, p3);
-            out.rail = 0;
-            out.direction = -1;
-            out.contact = mix(.6, 1, p3);
-            out.inCorridor = false;
-          }
-          out.visY = out.docY - sy;
-          return out;
-        }
-
-        // Inter-section mobile corridor: glide gracefully out into open sky between chapters & back to right lane!
-        const gapH = Math.max(56, c.gapBottom - c.gapTop);
-        const maxHorizW = Math.max(96, (width - 36) / 2.08);
-        const maxGapW = Math.max(96, (gapH - 32) / .56);
-        const corridorW = Math.min(maxHorizW, maxGapW, 174);
-        const streamHalfH = corridorW * .28 + 16;
-        const gapMin = c.gapTop + streamHalfH;
-        const gapMax = Math.max(gapMin, c.gapBottom - streamHalfH);
-        const safeMin = Math.max(gapMin, sy + headerSafeBottom + streamHalfH);
-        const safeMax = Math.min(gapMax, sy + hudTop - streamHalfH);
-        const lockedDocY = safeMax >= safeMin ? clamp(c.gapMid, safeMin, safeMax) : clamp(c.gapMid, gapMin, gapMax);
-        const prevSec = layout[k - 1];
-        const startDocY = prevSec
-          ? clamp(c.start, prevSec.contentTop + 26, Math.max(prevSec.contentTop + 26, Math.min(lockedDocY, prevSec.contentBottom - 26)))
-          : Math.min(c.start, lockedDocY);
-        const endDocY = clamp(c.end, Math.min(next.contentBottom - 26, Math.max(lockedDocY, next.contentTop + 26)), Math.max(next.contentTop + 26, next.contentBottom - 26));
-
-        if (u < .14) {
-          const p1 = smooth(u / .14);
-          out.x = mLaneX;
-          out.docY = mix(startDocY, lockedDocY, p1);
-          out.w = mRailW;
-          out.formation = 0;
-          out.rail = 1;
-          out.direction = -1;
-          out.contact = 0;
-          out.inCorridor = false;
-        } else if (u <= .86) {
-          const phase = (u - .14) / .72;
-          // Smooth C1 flat-top plateau so mobile pieces reach & hold full heroic size across the open gap
-          const archSmooth = phase < .28
-            ? smooth(phase / .28)
-            : (phase > .72 ? smooth((1 - phase) / .28) : 1);
-          out.x = mix(mLaneX, width * .50, archSmooth);
-          out.docY = lockedDocY;
-          out.w = mix(mRailW, corridorW, archSmooth);
-          out.formation = archSmooth;
-          out.rail = 1 - archSmooth;
-          out.direction = phase < .5 ? -1 : 1;
-          out.contact = 0;
-          out.inCorridor = true;
-        } else {
-          const p3 = smooth((u - .86) / .14);
-          out.x = mLaneX;
-          out.docY = mix(lockedDocY, endDocY, p3);
-          out.w = mRailW;
-          out.formation = 0;
-          out.rail = 1;
-          out.direction = 1;
-          out.contact = 0;
-          out.inCorridor = false;
-        }
-        out.visY = out.docY - sy;
-        return out;
-      }
-
-      if (k === corridors.length - 1 || s <= corridors[k + 1].start) {
-        if (next.isContact) {
-          const bay = computeContactBay(next, sy, hudTop);
-          out.x = width * .5;
-          out.docY = bay.bayMidDoc;
-          out.visY = out.docY - sy;
-          out.w = bay.fittedW;
-          out.formation = bay.compact;
-          out.rail = 0;
-          out.direction = 1;
-          out.contact = 1;
-          out.inCorridor = false;
-          return out;
-        }
-
-        const minDoc = next.contentTop + 26;
-        const maxDoc = Math.max(minDoc, next.contentBottom - 26);
-        let docY = clamp(s, minDoc, maxDoc);
-        const railHalfH = mRailW * .62 + 10;
-        const visMin = sy + headerSafeBottom + railHalfH;
-        const visMax = sy + hudTop - railHalfH;
-        if (visMax > visMin) {
-          docY = clamp(docY, Math.max(minDoc, visMin), Math.min(maxDoc, visMax));
-        }
-
-        out.x = mLaneX;
-        out.docY = docY;
-        out.visY = docY - sy;
-        out.w = mRailW;
-        out.formation = 0;
-        out.rail = 1;
-        out.direction = 1;
-        out.contact = 0;
-        out.inCorridor = false;
-        return out;
-      }
-    }
-
-    const last = layout[layout.length - 1];
-    const bay = computeContactBay(last, sy, hudTop);
-    out.x = width * .5;
-    out.docY = bay.bayMidDoc;
-    out.visY = out.docY - sy;
-    out.w = bay.fittedW;
-    out.formation = bay.compact;
-    out.rail = 0;
-    out.direction = 1;
-    out.contact = 1;
-    out.inCorridor = false;
-  }
-
-  // Exact analytical critically-damped 2nd-order spring along 1D safe path parameter `s`
-  function stepSpringAxis(cur, vel, targetVal, omega, dt, maxSpeed, maxFrameStep) {
+  // Exact analytical critically-damped 2nd-order spring (ZERO hard lag clamps!)
+  function stepSpringAxis(cur, vel, targetVal, omega, dt, maxSpeed) {
     const e = Math.exp(-omega * dt);
     const diff = cur - targetVal;
     const temp = (vel + omega * diff) * dt;
     let nextPos = targetVal + (diff + temp) * e;
     let nextVel = (vel - omega * temp) * e;
 
-    const maxStep = Math.min(maxSpeed * dt, maxFrameStep);
-    const delta = nextPos - cur;
-    if (delta > maxStep) {
-      nextPos = cur + maxStep;
-      nextVel = Math.min(maxSpeed, maxStep / dt);
-    } else if (delta < -maxStep) {
-      nextPos = cur - maxStep;
-      nextVel = -Math.min(maxSpeed, maxStep / dt);
+    if (maxSpeed > 0) {
+      const maxStep = maxSpeed * dt;
+      const delta = nextPos - cur;
+      if (delta > maxStep) {
+        nextPos = cur + maxStep;
+        nextVel = maxSpeed;
+      } else if (delta < -maxStep) {
+        nextPos = cur - maxStep;
+        nextVel = -maxSpeed;
+      }
     }
 
     axisOut.pos = nextPos;
     axisOut.vel = nextVel;
   }
 
-  function advanceAlongSafePath(sy, hudTop, dt) {
-    const focusRatio = width <= 800 ? .44 : .46;
-    const rawTargetS = sy + readingHeight * focusRatio;
-
-    // Track scroll idle duration & direction for Corridor Auto-Commit (never park mid-crossing!)
-    if (scrollCommit.lastSy < 0) {
-      scrollCommit.lastSy = sy;
-      scrollCommit.idleTime = 0;
-    } else {
-      const dSy = sy - scrollCommit.lastSy;
-      if (Math.abs(dSy) > .5) {
-        scrollCommit.lastMoveDir = dSy > 0 ? 1 : -1;
-        scrollCommit.lastSy = sy;
-        scrollCommit.idleTime = 0;
-      } else {
-        scrollCommit.idleTime += dt;
-      }
-    }
-
-    if (cinemaPlaying) {
-      scrollCommit.active = false;
-      scrollCommit.corridorIndex = -1;
-      scrollCommit.idleTime = 0;
-    } else {
-      // Find whether rawTargetS is inside an active side-switching corridor
-      let activeCorrIdx = -1;
+  // Compute desired discrete chapter directly from scroll focus (no hysteresis — used for init / large jumps)
+  function chapterAtFocus(focusDocY) {
+    const isMobile = width <= 800;
+    if (!corridors.length) return 0;
+    if (isMobile) {
+      let ch = -1;
       for (let k = 0; k < corridors.length; k++) {
-        const c = corridors[k];
-        if (!c.crossSide) continue;
-        if (rawTargetS > c.start && rawTargetS < c.end) {
-          activeCorrIdx = k;
-          break;
+        if (focusDocY >= corridors[k].triggerY) ch = corridors[k].toChapter;
+      }
+      return ch;
+    }
+    let ch = 0;
+    for (let k = 1; k < corridors.length; k++) {
+      if (focusDocY >= corridors[k].triggerY) ch = corridors[k].toChapter;
+    }
+    return ch;
+  }
+
+  // Update target chapter with clean ±HYST deadband around every corridor midpoint (ZERO ping-pong!)
+  function nextChapterWithHysteresis(currentCh, focusDocY) {
+    const isMobile = width <= 800;
+    const hyst = cinemaPlaying ? 10 : (isMobile ? 20 : 22);
+    const minCh = isMobile ? -1 : 0;
+    const maxCh = layout.length - 1;
+    let ch = clamp(currentCh, minCh, maxCh);
+
+    // Check forward transitions
+    while (ch < maxCh) {
+      const corrIdx = ch + 1; // Corridor between ch and ch+1
+      const c = corridors[corrIdx];
+      if (!c) break;
+      if (focusDocY >= c.triggerY + hyst) {
+        ch++;
+      } else {
+        break;
+      }
+    }
+
+    // Check backward transitions
+    while (ch > minCh) {
+      const corrIdx = ch; // Corridor between ch-1 and ch
+      const c = corridors[corrIdx];
+      if (!c) break;
+      if (focusDocY <= c.triggerY - hyst) {
+        ch--;
+      } else {
+        break;
+      }
+    }
+
+    return ch;
+  }
+
+  // Compute exact resting lane geometry for a given chapter index at current scrollY
+  function getStationPose(chIdx, sy, hudTop) {
+    const isMobile = width <= 800;
+    const focusRatio = getFocusRatio();
+
+    if (isMobile) {
+      const first = layout[0];
+      const bayTop = hero.docBottom + 12;
+      const bayBottom = first ? first.contentTop - 12 : (flightSlot ? flightSlot.docBottom - 12 : bayTop + 200);
+      const bayH = Math.max(80, bayBottom - bayTop);
+      const bayMid = (bayTop + bayBottom) * .5;
+      const heroBayW = Math.min((width - 36) / 1.54, (bayH - 22) / 1.50, 204);
+      const mLaneX = mobileLane ? mobileLane.x : width - 38;
+      const mRailW = mobileLane ? mobileLane.railW : 58;
+
+      if (chIdx < 0 || !layout.length) {
+        const halfH = heroBayW * .64 + 12;
+        const minVis = Math.max(headerSafeBottom + halfH, bayTop - sy + halfH);
+        const maxVis = Math.min(hudTop - halfH, bayBottom - sy - halfH);
+        const visY = maxVis >= minVis ? clamp(bayMid - sy, minVis, maxVis) : (bayMid - sy);
+        return {
+          x: width * .5,
+          visY,
+          minVis: bayTop - sy + halfH,
+          maxVis: bayBottom - sy - halfH,
+          w: heroBayW,
+          formation: 0,
+          rail: 0,
+          contact: 0,
+          safeLaneX: width * .5
+        };
+      }
+
+      const row = layout[clamp(chIdx, 0, layout.length - 1)];
+      if (row.isContact) {
+        const bay = computeContactBay(row, sy, hudTop);
+        const halfH = bay.fittedW * .64 + 12;
+        return {
+          x: width * .5,
+          visY: bay.bayMidDoc - sy,
+          minVis: Math.max(headerSafeBottom + halfH, bay.bayTopDoc - sy + halfH),
+          maxVis: Math.min(hudTop - halfH, bay.bayBottomDoc - sy - halfH),
+          w: bay.fittedW,
+          formation: bay.compact,
+          rail: 0,
+          contact: 1,
+          safeLaneX: width * .5
+        };
+      }
+
+      const railHalfH = mRailW * .62 + 14;
+      const visMin = Math.max(headerSafeBottom + railHalfH, row.contentTop - sy + 20);
+      const visMax = Math.min(hudTop - railHalfH, row.contentBottom - sy - 20);
+      const targetVis = visMax >= visMin
+        ? clamp(readingHeight * focusRatio, visMin, visMax)
+        : clamp(readingHeight * focusRatio, headerSafeBottom + railHalfH, Math.max(headerSafeBottom + railHalfH, hudTop - railHalfH));
+      return {
+        x: mLaneX,
+        visY: targetVis,
+        minVis: headerSafeBottom + railHalfH,
+        maxVis: Math.max(headerSafeBottom + railHalfH, hudTop - railHalfH),
+        w: mRailW,
+        formation: 0,
+        rail: 1,
+        contact: 0,
+        safeLaneX: mLaneX
+      };
+    }
+
+    // Desktop / Laptop
+    const row = layout[clamp(chIdx, 0, layout.length - 1)];
+    if (!row) {
+      const hw = heroStationW(hudTop);
+      return {
+        x: hero.x,
+        visY: hero.docTop + hero.h * .49 - sy,
+        minVis: headerSafeBottom + hw * .64 + 14,
+        maxVis: hudTop - hw * .64 - 14,
+        w: hw,
+        formation: 0,
+        rail: 0,
+        contact: 0,
+        safeLaneX: hero.x
+      };
+    }
+
+    if (row.isContact) {
+      const bay = computeContactBay(row, sy, hudTop);
+      const halfH = bay.fittedW * .64 + 12;
+      return {
+        x: bay.x,
+        visY: bay.bayMidDoc - sy,
+        minVis: Math.max(headerSafeBottom + halfH, bay.bayTopDoc - sy + halfH),
+        maxVis: Math.min(hudTop - halfH, bay.bayBottomDoc - sy - halfH),
+        w: bay.fittedW,
+        formation: bay.compact,
+        rail: 0,
+        contact: 1,
+        safeLaneX: bay.x
+      };
+    }
+
+    // Side-lane station (Chapter 0 seamlessly shares the right lane with Hero)
+    const prevCorr = chIdx > 0 ? corridors[chIdx] : null;
+    const prevRow = chIdx > 0 ? layout[chIdx - 1] : null;
+    const nextCorr = chIdx < layout.length - 1 ? corridors[chIdx + 1] : null;
+    const nextRow = chIdx < layout.length - 1 ? layout[chIdx + 1] : null;
+
+    // Measure live vertical lane boundaries (between opposite-side chapters above/below & header/HUD)
+    let rawCeilVis = headerSafeBottom;
+    let rawFloorVis = hudTop;
+    if (prevCorr && prevRow && prevRow.side !== row.side) {
+      const prevBotVis = prevRow.lastEl ? prevRow.lastEl.getBoundingClientRect().bottom : (prevCorr.gapTop - sy);
+      rawCeilVis = Math.max(rawCeilVis, prevBotVis);
+    }
+    if (nextCorr && nextRow && nextRow.side !== row.side) {
+      const nextTopVis = nextRow.firstEl ? nextRow.firstEl.getBoundingClientRect().top : (nextCorr.gapBottom - sy);
+      rawFloorVis = Math.min(rawFloorVis, nextTopVis);
+    }
+
+    const availLaneH = Math.max(130, rawFloorVis - rawCeilVis - 28);
+    const baseLaneW = Math.min(row.laneW, (hudTop - headerSafeBottom - 44) / 1.40, availLaneH / 1.38);
+    let stationX = row.x;
+    let stationW = baseLaneW;
+    let desiredVisY = readingHeight * focusRatio;
+
+    if (chIdx === 0 && row.side === 1) {
+      // Smooth Hero -> #trajetoria blend in the shared Right lane
+      const hw = Math.min(heroStationW(hudTop), availLaneH / 1.38);
+      const heroVisY = Math.max(headerSafeBottom + hw * .64 + 14, hero.docTop + hero.h * .49 - sy);
+      const blendT = smooth((sy + readingHeight * focusRatio - (hero.docBottom - 60)) / 240);
+      const clearX = smooth((sy + readingHeight * focusRatio - (hero.docBottom + 10)) / 140);
+      stationX = mix(hero.x, row.x, clearX);
+      stationW = mix(hw, baseLaneW, blendT);
+      desiredVisY = mix(heroVisY, readingHeight * focusRatio, blendT);
+    }
+
+    const halfH = stationW * .64 + 14;
+    const minVis = rawCeilVis + halfH;
+    const maxVis = rawFloorVis - halfH;
+
+    // Subtle editorial vertical wave inside chapter span (zero jump at boundaries)
+    const spanLen = Math.max(1, row.contentBottom - row.contentTop);
+    const chapFrac = unit((sy + readingHeight * focusRatio - row.contentTop) / spanLen);
+    const waveEnv = Math.sin(chapFrac * Math.PI);
+    desiredVisY += Math.sin(chapFrac * tau) * 10 * waveEnv * waveEnv;
+
+    // Gentle anticipatory cushion so approaching opposite-side chapters lift/lower desiredVisY smoothly
+    // BEFORE a 100px mouse-wheel tick can ever slam into minVis/maxVis!
+    const cushion = Math.min(84, Math.max(0, (maxVis - minVis) * .35));
+    const softMinVis = nav.scrollDir < 0 ? (minVis + cushion) : minVis;
+    const softMaxVis = nav.scrollDir > 0 ? (maxVis - cushion) : maxVis;
+
+    if (softMaxVis >= softMinVis) {
+      desiredVisY = clamp(desiredVisY, softMinVis, softMaxVis);
+    } else if (maxVis >= minVis) {
+      desiredVisY = clamp(desiredVisY, minVis, maxVis);
+    } else {
+      desiredVisY = (rawCeilVis + rawFloorVis) * .5;
+    }
+
+    return {
+      x: stationX,
+      visY: desiredVisY,
+      minVis,
+      maxVis,
+      w: stationW,
+      formation: 0,
+      rail: 0,
+      contact: 0,
+      safeLaneX: stationX
+    };
+  }
+
+  function startCorridorFlight(fromCh, toCh, sy, hudTop) {
+    const isMobile = width <= 800;
+    const forward = toCh > fromCh;
+    const corrIdx = forward ? toCh : fromCh;
+    const c = corridors[corrIdx];
+    if (!c) {
+      nav.chapter = toCh;
+      nav.flightActive = false;
+      return;
+    }
+
+    const fromPose = getStationPose(fromCh, sy, hudTop);
+    const toPose = getStationPose(toCh, sy, hudTop);
+    const isMobileHero = isMobile && (fromCh < 0 || toCh < 0);
+    const isMobileArch = isMobile && !isMobileHero && !layout[fromCh]?.isContact && !layout[toCh]?.isContact;
+
+    nav.flightActive = true;
+    nav.flightCorridorIdx = corrIdx;
+    nav.flightFromChapter = fromCh;
+    nav.flightToChapter = toCh;
+    nav.flightU = 0;
+    nav.flightTargetU = 1;
+    nav.flightSpeedU = 0;
+    nav.flightFromX = nav.x;
+    nav.flightToX = toPose.x;
+    nav.flightFromVisY = nav.visY;
+    nav.flightExitVisY = nav.visY;
+    nav.flightExitCaptured = false;
+    nav.flightFromW = nav.w || fromPose.w;
+    nav.flightToW = toPose.w;
+    nav.flightDir = isMobileArch ? -1 : (Math.sign(toPose.x - nav.x) || 1);
+    nav.flightIsMobileArch = isMobileArch;
+    nav.flightIsMobileHero = isMobileHero;
+    nav.flightArrivalFired = false;
+  }
+
+  function advanceNavigation(sy, hudTop, dt) {
+    const isMobile = width <= 800;
+    const focusRatio = getFocusRatio();
+    const focusDocY = sy + readingHeight * focusRatio;
+
+    if (nav.lastSy < 0) {
+      nav.lastSy = sy;
+    } else {
+      const dSy = sy - nav.lastSy;
+      if (Math.abs(dSy) > .5) {
+        nav.scrollDir = dSy > 0 ? 1 : -1;
+      }
+    }
+
+    const instantJump = nav.initialized && Math.abs(sy - nav.lastSy) > height * 1.15;
+    nav.lastSy = sy;
+
+    if (!nav.initialized || instantJump) {
+      const ch = chapterAtFocus(focusDocY);
+      const pose = getStationPose(ch, sy, hudTop);
+      position = target;
+      nav.chapter = ch;
+      nav.x = pose.x;
+      nav.vx = 0;
+      nav.visY = pose.visY;
+      nav.vy = 0;
+      nav.w = pose.w;
+      nav.formation = pose.formation;
+      nav.rail = pose.rail;
+      nav.contact = pose.contact;
+      nav.direction = 1;
+      nav.flightActive = false;
+      nav.flightCorridorIdx = -1;
+      nav.initialized = true;
+
+      areaOut.x = nav.x;
+      areaOut.visY = nav.visY;
+      areaOut.w = nav.w;
+      areaOut.formation = nav.formation;
+      areaOut.rail = nav.rail;
+      areaOut.direction = nav.direction;
+      areaOut.contact = nav.contact;
+      areaOut.inCorridor = false;
+      areaOut.safeLaneX = pose.safeLaneX;
+      return areaOut;
+    }
+
+    // 1. Check whether user scroll crossed a hysteresis threshold to trigger (or smoothly reverse) a corridor flight
+    const refCh = nav.flightActive
+      ? (nav.flightTargetU > .5 ? nav.flightToChapter : nav.flightFromChapter)
+      : nav.chapter;
+    const desiredCh = nextChapterWithHysteresis(refCh, focusDocY);
+
+    if (!nav.flightActive && desiredCh !== nav.chapter) {
+      // Advance/retreat one corridor at a time so pieces ALWAYS travel through the open sky gap!
+      const stepCh = nav.chapter + Math.sign(desiredCh - nav.chapter);
+      startCorridorFlight(nav.chapter, stepCh, sy, hudTop);
+    } else if (nav.flightActive) {
+      // Smooth C1 reversal only if user clearly scrolled back across the threshold of this corridor
+      if (nav.flightTargetU > .5 && desiredCh === nav.flightFromChapter && nav.flightU < .72) {
+        nav.flightTargetU = 0;
+      } else if (nav.flightTargetU < .5 && desiredCh === nav.flightToChapter && nav.flightU > .28) {
+        nav.flightTargetU = 1;
+      }
+    }
+
+    // 2. Active Autonomous Corridor Flight (pure time-based smooth motion, decoupled from wheel ticks!)
+    if (nav.flightActive) {
+      const c = corridors[nav.flightCorridorIdx];
+      const fromCh = nav.flightFromChapter;
+      const toCh = nav.flightToChapter;
+      const prevChap = c.fromChapter >= 0 ? layout[c.fromChapter] : null;
+      const nextChap = layout[clamp(c.toChapter, 0, layout.length - 1)];
+      const liveGap = getLiveCorridorGapVis(c, sy);
+
+      // Update live endpoint targets (e.g. if contact bay shifted slightly while scrolling)
+      const toPose = getStationPose(toCh, sy, hudTop);
+      const fromPose = getStationPose(fromCh, sy, hudTop);
+      nav.flightToX = toPose.x;
+      nav.flightToW = toPose.w;
+
+      // Compute bold crossing size that strictly fits inside open gap with generous clearance
+      let corridorW = computeCorridorW(c, prevChap, nextChap);
+      const visGapTop = Math.max(liveGap.topVis, headerSafeBottom);
+      const visGapBot = Math.min(liveGap.bottomVis, hudTop);
+      const availGapH = Math.max(48, visGapBot - visGapTop);
+      // Smooth dynamic fit only if extreme scrolling squeezes the visible gap near viewport edge
+      const tightFitW = Math.max(88, (availGapH - 26) / .48);
+      if (tightFitW < corridorW) {
+        corridorW = Math.max(tightFitW, nav.w > 0 ? mix(nav.w, tightFitW, 1 - Math.exp(-dt * 14)) : tightFitW);
+      }
+
+      // Smooth urgency pacing: silky ~0.62s desktop / ~0.58s laptop / ~0.56s mobile,
+      // gently accelerates (up to 1.48x) ONLY if rapid wheel scrolling carries the gap toward header/HUD
+      const baseDur = isMobile ? .56 : (width <= 1320 ? .58 : .62);
+      const neededGapH = corridorW * .48 + 30;
+      const marginTop = liveGap.bottomVis - (headerSafeBottom + neededGapH);
+      const marginBot = (hudTop - neededGapH) - liveGap.topVis;
+      const approachMargin = nav.scrollDir > 0 ? marginTop : marginBot;
+      const urgency = approachMargin < 260
+        ? 1 + smooth((260 - approachMargin) / 220) * .48
+        : 1;
+      const desiredSpeedU = (nav.flightTargetU > .5 ? 1 : -1) * (urgency / baseDur);
+      // Smooth velocity ramp so mid-flight reversals or urgency boosts are 100% C1 continuous!
+      const velBlend = 1 - Math.exp(-dt * 16);
+      nav.flightSpeedU += (desiredSpeedU - nav.flightSpeedU) * velBlend;
+      nav.flightU = clamp(nav.flightU + nav.flightSpeedU * dt, 0, 1);
+
+      const u = nav.flightU;
+      const toIsContact = toCh >= 0 && !!layout[toCh]?.isContact;
+      const fromIsContact = fromCh >= 0 && !!layout[fromCh]?.isContact;
+
+      let targetX = nav.x;
+      let targetW = nav.w;
+      let targetFormation = 0;
+      let targetRail = 0;
+      let targetContact = 0;
+      let targetDir = nav.flightDir;
+      let inCorridor = false;
+
+      if (nav.flightIsMobileHero) {
+        // Mobile Hero bay <-> Right vertical lane strictly inside .mobile-flight
+        const goingToLane = toCh >= 0;
+        const p = smooth(u);
+        const laneMix = goingToLane ? p : (1 - p);
+        targetX = mix(width * .5, mobileLane ? mobileLane.x : width - 38, laneMix);
+        targetW = mix(goingToLane ? nav.flightFromW : toPose.w, goingToLane ? toPose.w : nav.flightFromW, laneMix);
+        targetFormation = Math.sin(p * Math.PI) * .48;
+        targetRail = laneMix;
+        targetContact = 0;
+        targetDir = goingToLane ? 1 : -1;
+        inCorridor = p > .05 && p < .95;
+      } else if (nav.flightIsMobileArch) {
+        // Mobile inter-section showcase: Right lane -> bold center showcase in open gap -> Right lane
+        const mLaneX = mobileLane ? mobileLane.x : width - 38;
+        const mRailW = mobileLane ? mobileLane.railW : 58;
+        const arch = u < .26
+          ? smooth(u / .26)
+          : (u > .74 ? smooth((1 - u) / .26) : 1);
+        targetX = mix(mLaneX, width * .50, arch);
+        targetW = mix(mRailW, corridorW, arch);
+        targetFormation = arch;
+        targetRail = 1 - arch;
+        targetContact = 0;
+        targetDir = u < .5 ? -1 : 1;
+        inCorridor = arch > .05;
+      } else if (isMobile && (toIsContact || fromIsContact)) {
+        // Mobile Right lane <-> Contact crest bay
+        const mLaneX = mobileLane ? mobileLane.x : width - 38;
+        const mRailW = mobileLane ? mobileLane.railW : 58;
+        const contactPose = toIsContact ? toPose : fromPose;
+        const p = smooth(u);
+        const cMix = toIsContact ? p : (1 - p);
+        targetX = mix(mLaneX, width * .5, cMix);
+        targetW = mix(mRailW, contactPose.w, cMix);
+        targetFormation = mix(0, contactPose.formation, cMix) + Math.sin(p * Math.PI) * .72 * (1 - contactPose.formation);
+        targetRail = 1 - cMix;
+        targetContact = cMix;
+        targetDir = toIsContact ? -1 : 1;
+        inCorridor = p > .08 && p < .92;
+      } else {
+        // Desktop / Laptop continuous smooth autonomous highway across the open inter-section sky!
+        // Horizontal glide spans [0.05..0.95] (wide silky smoothstep, zero Phase 1/3 backup reversals!),
+        // while formation smoothly compacts [0..0.20], holds bold crossing row [0.20..0.80], and unfurls [0.80..1.00].
+        const endForm = toIsContact ? toPose.formation : 0;
+        const startForm = fromIsContact ? fromPose.formation : 0;
+        const pHoriz = smooth((u - .05) / .90);
+        targetX = mix(nav.flightFromX, nav.flightToX, pHoriz);
+
+        if (u < .20) {
+          const p1 = smooth(u / .20);
+          targetW = mix(nav.flightFromW, corridorW, p1);
+          targetFormation = mix(startForm, 1, p1);
+          targetContact = fromIsContact ? mix(1, .5, p1) : 0;
+        } else if (u <= .80) {
+          targetW = corridorW;
+          targetFormation = 1;
+          targetContact = toIsContact ? mix(0, .6, (u - .20) / .60) : (fromIsContact ? mix(.5, 0, (u - .20) / .60) : 0);
+        } else {
+          const p3 = smooth((u - .80) / .20);
+          targetW = mix(corridorW, nav.flightToW, p3);
+          targetFormation = mix(1, endForm, p3);
+          targetContact = toIsContact ? mix(.6, 1, p3) : 0;
+        }
+        inCorridor = pHoriz > .08 && pHoriz < .88;
+        targetDir = nav.flightTargetU > .5 ? nav.flightDir : -nav.flightDir;
+      }
+
+      // Compute vertical Y target strictly inside the open inter-section sky gap!
+      // Use constant corridorW for streamHalfH throughout the flight so safeMinVis never drifts
+      // downward as targetW ramps up (eliminating spring back-drift reversals on wheel ticks!)
+      const streamHalfH = corridorW * .230 + PIECE_PAD + 6;
+      const gapMinVis = liveGap.topVis + streamHalfH;
+      const gapMaxVis = Math.max(gapMinVis, liveGap.bottomVis - streamHalfH);
+      const safeMinVis = Math.max(gapMinVis, headerSafeBottom + streamHalfH);
+      const safeMaxVis = Math.min(gapMaxVis, hudTop - streamHalfH);
+
+      let desiredGapVisY = liveGap.midVis;
+      if (toIsContact && u > .72) {
+        desiredGapVisY = mix(liveGap.midVis, toPose.visY, smooth((u - .72) / .28));
+      } else if (safeMaxVis - safeMinVis > 6) {
+        // Hold near current height if already safely inside the leading half of the gap (zero wasted Y motion!),
+        // otherwise aim cleanly inside the leading safe cushion for max headroom on 100px wheel ticks.
+        const leadTarget = nav.scrollDir > 0
+          ? (safeMinVis + Math.min(8, (safeMaxVis - safeMinVis) * .20))
+          : (safeMaxVis - Math.min(8, (safeMaxVis - safeMinVis) * .20));
+        desiredGapVisY = nav.scrollDir > 0
+          ? Math.min(nav.flightFromVisY, leadTarget)
+          : Math.max(nav.flightFromVisY, leadTarget);
+      }
+
+      if (safeMaxVis >= safeMinVis) {
+        desiredGapVisY = clamp(desiredGapVisY, safeMinVis, safeMaxVis);
+      } else {
+        desiredGapVisY = clamp(desiredGapVisY, gapMinVis, gapMaxVis);
+      }
+
+      // Blend Y with exact C1 endpoint continuity:
+      // - Phase 1 [0..0.16]: direct smoothstep flightFromVisY -> desiredGapVisY
+      // - Phase 2 [0.16..0.78]: smooth critically-damped tracking inside desiredGapVisY
+      // - Phase 3 [0.78..1.00]: direct smoothstep from captured exit Y -> toPose.visY
+      //   so at u=1.0 nav.visY === toPose.visY EXACTLY (ZERO handoff snap!)
+      const isDesktopFlight = !nav.flightIsMobileHero && !nav.flightIsMobileArch && !isMobile;
+      if (isDesktopFlight && u < .16) {
+        const p1 = smooth(u / .16);
+        nav.visY = mix(nav.flightFromVisY, desiredGapVisY, p1);
+        nav.vy = 0;
+      } else if (isDesktopFlight && u >= .78) {
+        if (!nav.flightExitCaptured) {
+          nav.flightExitVisY = nav.visY;
+          nav.flightExitCaptured = true;
+        }
+        const pExit = smooth((u - .78) / .22);
+        nav.visY = mix(nav.flightExitVisY, toPose.visY, pExit);
+        nav.vy = 0;
+      } else {
+        let targetVisY = desiredGapVisY;
+        if (!isDesktopFlight && !inCorridor && u < .18) {
+          targetVisY = mix(fromPose.visY, desiredGapVisY, smooth(u / .18));
+        } else if (!isDesktopFlight && !inCorridor && u > .82) {
+          targetVisY = mix(desiredGapVisY, toPose.visY, smooth((u - .82) / .18));
+        }
+
+        // Smooth critically-damped Y spring (ZERO hard lag clamp!)
+        stepSpringAxis(nav.visY, nav.vy, targetVisY, 13.5, dt, 0);
+        nav.visY = axisOut.pos;
+        nav.vy = axisOut.vel;
+      }
+
+      // Strictly keep Y inside the physical open sky gap ONLY while horizontally crossing cards
+      if (inCorridor) {
+        const hardHalfH = targetW * .220 + PIECE_PAD + 2;
+        const hardMin = Math.max(liveGap.topVis + hardHalfH, headerSafeBottom + hardHalfH);
+        const hardMax = Math.min(liveGap.bottomVis - hardHalfH, hudTop - hardHalfH);
+        if (hardMax >= hardMin) {
+          if (nav.visY < hardMin) { nav.visY = hardMin; nav.vy = Math.max(0, nav.vy); }
+          else if (nav.visY > hardMax) { nav.visY = hardMax; nav.vy = Math.min(0, nav.vy); }
+        } else {
+          const physMin = liveGap.topVis + hardHalfH;
+          const physMax = Math.max(physMin, liveGap.bottomVis - hardHalfH);
+          nav.visY = clamp(nav.visY, physMin, physMax);
+          nav.vy = 0;
         }
       }
 
-      // Unlock smoothly if user left the corridor or resumed scrolling past hysteresis (~18px)
-      if (scrollCommit.active) {
-        if (activeCorrIdx !== scrollCommit.corridorIndex || Math.abs(sy - scrollCommit.anchorSy) >= 18) {
-          scrollCommit.active = false;
-          scrollCommit.corridorIndex = -1;
+      // On desktop Phase 3 unfurl, gently keep expansion size within live vertical clearance of the lane
+      // so expanding top/bottom pieces NEVER clip the previous chapter's bottom edge!
+      if (isDesktopFlight && u > .82 && !toIsContact) {
+        const destRow = layout[clamp(toCh, 0, layout.length - 1)];
+        const prevRow = toCh > 0 ? layout[toCh - 1] : null;
+        const nextRow = toCh < layout.length - 1 ? layout[toCh + 1] : null;
+        let laneCeilVis = headerSafeBottom;
+        let laneFloorVis = hudTop;
+        if (prevRow && prevRow.side !== destRow.side) {
+          const prevBot = prevRow.lastEl ? prevRow.lastEl.getBoundingClientRect().bottom : (prevRow.contentBottom - sy);
+          laneCeilVis = Math.max(laneCeilVis, prevBot);
+        }
+        if (nextRow && nextRow.side !== destRow.side) {
+          const nextTop = nextRow.firstEl ? nextRow.firstEl.getBoundingClientRect().top : (nextRow.contentTop - sy);
+          laneFloorVis = Math.min(laneFloorVis, nextTop);
+        }
+        const availVert = Math.max(60, Math.min(nav.visY - laneCeilVis, laneFloorVis - nav.visY) - PIECE_PAD - 8);
+        const maxOrbitW = availVert / .64;
+        const unfurlWeight = 1 - targetFormation;
+        if (unfurlWeight > .01 && targetW > maxOrbitW) {
+          targetW = mix(targetW, Math.max(corridorW * .78, maxOrbitW), unfurlWeight);
         }
       }
 
-      // Engage Corridor Auto-Commit once scroll settles (~150ms idle) inside any side-switching corridor
-      if (!scrollCommit.active && activeCorrIdx >= 0
-        && (scrollCommit.idleTime >= .22 || (scrollCommit.idleTime >= .15 && scrollVelocity < .08))) {
-        const c = corridors[activeCorrIdx];
-        const u = unit((rawTargetS - c.start) / Math.max(1, c.end - c.start));
-        const uBiased = u + scrollCommit.lastMoveDir * .04;
-        scrollCommit.active = true;
-        scrollCommit.corridorIndex = activeCorrIdx;
-        scrollCommit.committedS = uBiased >= .5 ? (c.end + 1) : (c.start - 1);
-        scrollCommit.anchorSy = sy;
+      nav.x = targetX;
+      nav.vx = 0;
+      nav.w = targetW;
+      nav.formation = targetFormation;
+      nav.rail = targetRail;
+      nav.contact = targetContact;
+      nav.direction += (targetDir - nav.direction) * (1 - Math.exp(-dt * 12));
+
+      if (!nav.flightArrivalFired && u >= .88 && nav.flightTargetU > .5 && !nav.flightIsMobileArch) {
+        nav.flightArrivalFired = true;
+        arrival = clock;
       }
+
+      // Finish autonomous flight cleanly on endpoint!
+      if ((nav.flightTargetU > .5 && u >= 1) || (nav.flightTargetU < .5 && u <= 0)) {
+        nav.chapter = nav.flightTargetU > .5 ? toCh : fromCh;
+        nav.flightActive = false;
+        nav.flightCorridorIdx = -1;
+        nav.flightSpeedU = 0;
+      }
+
+      areaOut.x = nav.x;
+      areaOut.visY = nav.visY;
+      areaOut.w = nav.w;
+      areaOut.formation = nav.formation;
+      areaOut.rail = nav.rail;
+      areaOut.direction = nav.direction;
+      areaOut.contact = nav.contact;
+      areaOut.inCorridor = inCorridor;
+      // Always report the lane closer to current nav.x so barrier NEVER teleports across a card!
+      areaOut.safeLaneX = (u < .5) ? fromPose.safeLaneX : toPose.safeLaneX;
+      return areaOut;
     }
 
-    const goalS = scrollCommit.active ? scrollCommit.committedS : rawTargetS;
+    // 3. Calm Side-Lane Orbiting / Cruising (smooth critically-damped viewport-space springs, ZERO wheel snap!)
+    const station = getStationPose(nav.chapter, sy, hudTop);
+    const omegaX = 10.5;
+    const omegaY = mix(9.0, 11.5, cinemaEnergy);
+    stepSpringAxis(nav.x, nav.vx, station.x, omegaX, dt, 0);
+    nav.x = axisOut.pos;
+    nav.vx = axisOut.vel;
 
-    if (!pathSpring.initialized) {
-      pathSpring.s = goalS;
-      pathSpring.vs = 0;
-      evalSafePath(goalS, sy, hudTop, pathSample);
-      pathSpring.formation = pathSample.formation;
-      pathSpring.direction = pathSample.direction;
-      pathSpring.contact = pathSample.contact;
-      pathSpring.rail = pathSample.rail;
-      pathSpring.initialized = true;
-      return pathSample;
+    stepSpringAxis(nav.visY, nav.vy, station.visY, omegaY, dt, 0);
+    nav.visY = axisOut.pos;
+    nav.vy = axisOut.vel;
+
+    // Softly enforce side-lane physical ceiling/floor with actual nav.w radius so wheel ticks never hard-snap
+    const actualHalfH = nav.w * .58 + PIECE_PAD + 4;
+    const softMin = station.minVis - Math.max(0, (station.w * .64 + 14) - actualHalfH);
+    const softMax = station.maxVis + Math.max(0, (station.w * .64 + 14) - actualHalfH);
+    if (softMax >= softMin) {
+      if (nav.visY < softMin) { nav.visY = softMin; nav.vy = Math.max(0, nav.vy); }
+      else if (nav.visY > softMax) { nav.visY = softMax; nav.vy = Math.min(0, nav.vy); }
     }
 
-    const gapToTarget = Math.abs(rawTargetS - pathSpring.s);
-    // If an external script/button jumped scrollY by > 1.25 viewports in one instant (e.g. Replay to top),
-    // align directly onto the safe path at the new viewport rather than dragging offscreen.
-    if (!scrollCommit.active && gapToTarget > height * 1.25) {
-      pathSpring.s = rawTargetS;
-      pathSpring.vs = 0;
-      evalSafePath(rawTargetS, sy, hudTop, pathSample);
-      pathSpring.formation = pathSample.formation;
-      pathSpring.direction = pathSample.direction;
-      pathSpring.contact = pathSample.contact;
-      pathSpring.rail = pathSample.rail;
-      return pathSample;
-    }
+    const blend = 1 - Math.exp(-dt * 10);
+    nav.w += (station.w - nav.w) * blend;
+    nav.formation += (station.formation - nav.formation) * blend;
+    if (Math.abs(nav.formation - station.formation) < .002) nav.formation = station.formation;
+    nav.rail += (station.rail - nav.rail) * blend;
+    if (Math.abs(nav.rail - station.rail) < .002) nav.rail = station.rail;
+    nav.contact += (station.contact - nav.contact) * blend;
+    if (Math.abs(nav.contact - station.contact) < .002) nav.contact = station.contact;
+    nav.direction += (1 - nav.direction) * (1 - Math.exp(-dt * 8));
 
-    // Responsive critically-damped spring along the 1D safe path (zero stale-corridor lag, zero snaps!)
-    const omega = scrollCommit.active ? 11.5 : mix(14.5, 16.5, cinemaEnergy);
-    const maxSPerSec = scrollCommit.active ? Math.max(1100, height * 1.45) : Math.max(2400, height * 3.2);
-    const maxSFrame = scrollCommit.active ? Math.max(38, height * .055) : Math.max(68, height * .12);
-
-    stepSpringAxis(pathSpring.s, pathSpring.vs, goalS, omega, dt, maxSPerSec, maxSFrame);
-    // During normal scroll, guarantee `s` never falls behind `rawTargetS` far enough for an open corridor to scroll above header nav.
-    // During Corridor Auto-Commit, allow the spring to finish gliding smoothly all the way to c.start / c.end along the corridor!
-    let candidateS = axisOut.pos;
-    let candidateVs = axisOut.vel;
-    if (!scrollCommit.active) {
-      const maxLag = width <= 800 ? 60 : 78;
-      candidateS = clamp(axisOut.pos, goalS - maxLag, goalS + maxLag);
-      if (candidateS !== axisOut.pos) candidateVs = 0;
-    }
-
-    evalSafePath(candidateS, sy, hudTop, nextSample);
-
-    const prevFormation = pathSpring.formation;
-    pathSpring.s = candidateS;
-    pathSpring.vs = candidateVs;
-
-    const blend = 1 - Math.exp(-dt * (width <= 800 ? 18 : 13));
-    pathSpring.formation += (nextSample.formation - pathSpring.formation) * blend;
-    if (Math.abs(pathSpring.formation - nextSample.formation) < .002) pathSpring.formation = nextSample.formation;
-    if (prevFormation >= .32 && pathSpring.formation < .32 && nextSample.formation < .15) {
-      arrival = clock;
-    }
-
-    pathSpring.direction += (nextSample.direction - pathSpring.direction) * (1 - Math.exp(-dt * 11));
-    pathSpring.contact += (nextSample.contact - pathSpring.contact) * blend;
-    if (Math.abs(pathSpring.contact - nextSample.contact) < .002) pathSpring.contact = nextSample.contact;
-    pathSpring.rail += (nextSample.rail - pathSpring.rail) * blend;
-    if (Math.abs(pathSpring.rail - nextSample.rail) < .002) pathSpring.rail = nextSample.rail;
-
-    nextSample.formation = pathSpring.formation;
-    nextSample.direction = pathSpring.direction;
-    nextSample.contact = pathSpring.contact;
-    nextSample.rail = pathSpring.rail;
-    return nextSample;
+    areaOut.x = nav.x;
+    areaOut.visY = nav.visY;
+    areaOut.w = nav.w;
+    areaOut.formation = nav.formation;
+    areaOut.rail = nav.rail;
+    areaOut.direction = nav.direction;
+    areaOut.contact = nav.contact;
+    areaOut.inCorridor = false;
+    areaOut.safeLaneX = station.safeLaneX;
+    return areaOut;
   }
 
   // Exact minimum clearance from point (x, y) to every live obstacle rect and viewport edge
@@ -1195,7 +1344,6 @@
       const b = liveObstacles[i];
       if (wy + hh < b.top - 4 || wy - hh > b.bottom + 4) continue;
       if (stepSign < 0) {
-        // Tail extends left from startX
         if (b.right <= startX) {
           const gap = startX - b.right - 8;
           if (gap < maxLen) maxLen = Math.max(0, gap);
@@ -1203,7 +1351,6 @@
           return 0;
         }
       } else {
-        // Tail extends right from startX
         if (b.left >= startX) {
           const gap = b.left - startX - 8;
           if (gap < maxLen) maxLen = Math.max(0, gap);
@@ -1215,20 +1362,8 @@
     return Math.sign(dir || 1) * maxLen;
   }
 
-  function circleClearOfAll(x, y, minDist) {
-    for (let i = 0; i < liveObstacleCount; i++) {
-      const b = liveObstacles[i];
-      const cx = clamp(x, b.left, b.right);
-      const cy = clamp(y, b.top, b.bottom);
-      const dx = x - cx;
-      const dy = y - cy;
-      if (dx * dx + dy * dy < minDist * minDist) return false;
-    }
-    return true;
-  }
-
-  // Hard iterative Circle-vs-AABB obstacle push-out for a single piece (zero overlap guarantee!)
-  function resolvePieceObstacles(pose, hudTop, safeLaneX) {
+  // Smooth, axis-consistent Circle-vs-AABB safety barrier (ZERO horizontal<->vertical flip-flopping!)
+  function resolvePieceObstacles(pose, hudTop, safeLaneX, inCorridor) {
     let x = pose.wx;
     let y = pose.wy;
     const r = pose.r;
@@ -1241,7 +1376,7 @@
     x = clamp(x, minX, maxX);
     y = clamp(y, minY, maxY);
 
-    for (let iter = 0; iter < 8; iter++) {
+    for (let iter = 0; iter < 6; iter++) {
       let moved = false;
       for (let i = 0; i < liveObstacleCount; i++) {
         const b = liveObstacles[i];
@@ -1252,46 +1387,44 @@
         const distSq = dx * dx + dy * dy;
 
         if (distSq < minDist * minDist) {
-          if (distSq > 1e-4 && (b.isBand || Math.abs(dx) >= Math.abs(dy))) {
-            const dist = Math.sqrt(distSq);
-            const push = minDist - dist;
-            x += (dx / dist) * push;
-            y += (dy / dist) * push;
+          const bMidX = (b.left + b.right) * .5;
+          const bMidY = (b.top + b.bottom) * .5;
+          const candTop = b.top - minDist;
+          const candBot = b.bottom + minDist;
+          const candL = b.left - minDist;
+          const candR = b.right + minDist;
+
+          if (b.isBand) {
+            if (y <= bMidY && candTop >= minY) y = candTop;
+            else if (candBot <= maxY) y = candBot;
+            else if (candTop >= minY) y = candTop;
           } else {
-            // Inside AABB or grazing top/bottom of a vertically stacked card:
-            // Prefer escaping horizontally into the open side lane for non-band obstacles
-            // so pieces NEVER ping-pong vertically between stacked cards!
-            const candLeft = b.left - minDist;
-            const candRight = b.right + minDist;
-            const candTop = b.top - minDist;
-            const candBottom = b.bottom + minDist;
-            const bMidX = (b.left + b.right) * .5;
+            // Minimum-penetration escape among all valid sides: NEVER teleports 600px horizontally
+            // when a 10px vertical push escapes cleanly, and never flips axes arbitrarily!
+            const costTop = candTop >= minY ? Math.abs(y - candTop) : Infinity;
+            const costBot = candBot <= maxY ? Math.abs(candBot - y) : Infinity;
+            const costL = candL >= minX ? Math.abs(x - candL) * (safeLaneX < bMidX ? .85 : 1.05) : Infinity;
+            const costR = candR <= maxX ? Math.abs(candR - x) * (safeLaneX >= bMidX ? .85 : 1.05) : Infinity;
+            const vertBias = inCorridor ? .65 : 1.0;
+            const vTop = costTop * vertBias;
+            const vBot = costBot * vertBias;
 
-            let bestCost = Infinity;
-            let bestX = x, bestY = y;
+            let best = vTop, bestAxis = 0;
+            if (vBot < best) { best = vBot; bestAxis = 1; }
+            if (costL < best) { best = costL; bestAxis = 2; }
+            if (costR < best) { best = costR; bestAxis = 3; }
 
-            if (candLeft >= minX) {
-              const laneBonus = (!b.isBand && safeLaneX < bMidX) ? .45 : 1;
-              const cost = Math.abs(x - candLeft) * laneBonus;
-              if (cost < bestCost) { bestCost = cost; bestX = candLeft; bestY = y; }
+            if (Number.isFinite(best)) {
+              if (bestAxis === 0) y = candTop;
+              else if (bestAxis === 1) y = candBot;
+              else if (bestAxis === 2) x = candL;
+              else x = candR;
+            } else if (distSq > 1e-4) {
+              const dist = Math.sqrt(distSq);
+              const push = minDist - dist;
+              x += (dx / dist) * push;
+              y += (dy / dist) * push;
             }
-            if (candRight <= maxX) {
-              const laneBonus = (!b.isBand && safeLaneX >= bMidX) ? .45 : 1;
-              const cost = Math.abs(candRight - x) * laneBonus;
-              if (cost < bestCost) { bestCost = cost; bestX = candRight; bestY = y; }
-            }
-            // Only allow vertical escape on non-band cards if horizontal escape is blocked or top/bottom is genuinely clear
-            const vertPenalty = b.isBand ? .85 : 2.2;
-            if (candTop >= minY) {
-              const cost = Math.abs(y - candTop) * vertPenalty;
-              if (cost < bestCost) { bestCost = cost; bestX = x; bestY = candTop; }
-            }
-            if (candBottom <= maxY) {
-              const cost = Math.abs(candBottom - y) * vertPenalty;
-              if (cost < bestCost) { bestCost = cost; bestX = x; bestY = candBottom; }
-            }
-            x = bestX;
-            y = bestY;
           }
           x = clamp(x, minX, maxX);
           y = clamp(y, minY, maxY);
@@ -1301,21 +1434,7 @@
       if (!moved) break;
     }
 
-    // Final safety guarantee: if still overlapping any obstacle, jump cleanly to nearest collision-free open lane slot
-    if (!circleClearOfAll(x, y, r + 4)) {
-      const lx = clamp(safeLaneX, minX, maxX);
-      if (circleClearOfAll(lx, y, r + 4)) {
-        x = lx;
-      } else {
-        // Check a few vertical offsets in the open lane
-        for (let step = 28; step <= 260; step += 28) {
-          if (y - step >= minY && circleClearOfAll(lx, y - step, r + 4)) { x = lx; y -= step; break; }
-          if (y + step <= maxY && circleClearOfAll(lx, y + step, r + 4)) { x = lx; y += step; break; }
-        }
-      }
-    }
-
-    // Ultra-tight bay fallback: if still squeezed between two obstacles, scale sprite down so clearance >= 2px
+    // Ultra-tight bay fallback: if squeezed simultaneously between two opposing obstacles, scale sprite smoothly
     let worstOverlap = 0;
     for (let i = 0; i < liveObstacleCount; i++) {
       const b = liveObstacles[i];
@@ -1326,7 +1445,7 @@
       if (deficit > worstOverlap) worstOverlap = deficit;
     }
     if (worstOverlap > 0 && r > 1) {
-      const shrink = clamp((r - worstOverlap) / r, 0.28, 1);
+      const shrink = clamp((r - worstOverlap) / r, 0.32, 1);
       pose.w *= shrink;
       pose.h *= shrink;
       pose.r *= shrink;
@@ -1490,13 +1609,6 @@
     return eff * .58;
   }
 
-  function clearPainting() {
-    if (!paintedRect.active) return;
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.clearRect(paintedRect.x, paintedRect.y, paintedRect.w, paintedRect.h);
-    paintedRect.active = false;
-  }
-
   function draw(dt) {
     if (!ready || width < 2 || height < 2 || !hero) return;
     const sy = window.scrollY;
@@ -1504,7 +1616,7 @@
     const progress = position;
     const t = clock;
     const chapter = updateChapter(progress);
-    const area = advanceAlongSafePath(sy, hudTop, dt);
+    const area = advanceNavigation(sy, hudTop, dt);
 
     const formation = area.formation;
     const rail = area.rail;
@@ -1513,22 +1625,27 @@
     const orbiting = 1 - smooth(Math.max(formation, rail) * 1.55);
     const energy = Math.sin(chapter.local * Math.PI) ** 2;
 
-    clearPainting();
+    // ALWAYS clear the ENTIRE raw backing buffer in identity pixel coordinates (zero ghosting on any zoom/DPR!)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const scaleX = canvas.width / width;
+    const scaleY = canvas.height / height;
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
 
-    // Gentle 3D levitation (attenuated vertically during tight corridor flights)
-    const drift = mix(1, .58, contactMix);
-    const hoverX = Math.sin(t * .74) * area.w * .014 * drift * (1 - rail * .75);
-    const hoverY = Math.sin(t * .92) * area.w * .024 * drift * (1 - formation * .86);
+    // Gentle 3D levitation (calm & strictly bounded inside open clearance)
+    const drift = mix(1, .56, contactMix);
+    const hoverX = Math.sin(t * .70) * area.w * .012 * drift * (1 - rail * .80) * (1 - formation * .90);
+    const hoverY = Math.sin(t * .88) * area.w * .020 * drift * (1 - formation * .92);
     const centerX = area.x + hoverX;
     const centerY = area.visY + hoverY;
 
     // Group rotation (zeroed during horizontal corridor stream or mobile vertical ribbon)
-    const pointerTurn = cursor.x * .034 + cursor.y * .012;
-    const idleSway = (.050 * Math.sin(t * .72) + .020 * Math.cos(t * .41)) * drift;
+    const pointerTurn = cursor.x * .030 + cursor.y * .010;
+    const idleSway = (.044 * Math.sin(t * .68) + .018 * Math.cos(t * .39)) * drift;
     const normalTurn = idleSway
-      + (.058 * Math.sin(t * .88) * drift + pointerTurn) * (.45 + .55 * Math.sin(progress * Math.PI))
-      + .095 * Math.sin(progress * tau) * drift;
-    const contactTurn = .042 * Math.sin(t * .68) * drift + pointerTurn * .45;
+      + (.052 * Math.sin(t * .84) * drift + pointerTurn) * (.45 + .55 * Math.sin(progress * Math.PI))
+      + .082 * Math.sin(progress * tau) * drift;
+    const contactTurn = .038 * Math.sin(t * .64) * drift + pointerTurn * .42;
     const groupTurn = mix(normalTurn, contactTurn, contactMix) * (1 - Math.max(formation, rail));
     const cosG = Math.cos(groupTurn);
     const sinG = Math.sin(groupTurn);
@@ -1540,18 +1657,19 @@
       const beat = unit((chapter.local - i * .037) / (.87 - i * .037));
       const openFactor = mix(1, .28, contactMix);
       const open = (Math.sin(beat * Math.PI) ** 2) * openFactor * orbiting;
-      const breath = .5 - .5 * Math.cos(t * (1.42 + i * .098) + i * .64);
-      const normalSpread = .11 + (.28 * breath + (.72 + cinemaEnergy * .08) * open) * mix(.34, 1, orbiting);
-      const contactSpread = .08 + .15 * breath * drift;
+      const breath = .5 - .5 * Math.cos(t * (1.36 + i * .092) + i * .64);
+      const normalSpread = .10 + (.24 * breath + (.56 + cinemaEnergy * .06) * open) * mix(.34, 1, orbiting);
+      const contactSpread = .08 + .14 * breath * drift;
       const spread = mix(normalSpread, contactSpread, contactMix);
-      const idleX = Math.cos(t * 1.12 + i * 1.92) * (.010 + .028 * open) * drift;
-      const idleY = Math.sin(t * 1.48 + i * 1.68) * (.020 + .026 * open) * drift;
+      const idleX = Math.cos(t * 1.06 + i * 1.92) * (.009 + .022 * open) * drift;
+      const idleY = Math.sin(t * 1.38 + i * 1.68) * (.016 + .022 * open) * drift;
       const ox = p.cx * (1 + spread) + idleX;
-      const oy = p.cy * (1 + spread) + idleY - (i === 0 ? .046 : 0);
-      const baseTurn = p.turn * (.12 + .72 * breath + open * (1.85 + .30 * Math.sin(chapter.index + i))) * drift;
-      const fit = 1 - .28 * open;
+      const oy = p.cy * (1 + spread) + idleY - (i === 0 ? .044 : 0);
+      const baseTurn = p.turn * (.12 + .64 * breath + open * (1.65 + .26 * Math.sin(chapter.index + i))) * drift;
+      const fit = 1 - .25 * open;
       const inset = .90 - .08 * open;
-      const bob = Math.sin(t * 4.4 - p.lane * 1.45);
+      // Calm, low-frequency crossing wave so pieces NEVER bounce off gap margins
+      const bob = Math.sin(t * 2.4 - p.lane * 1.25);
 
       // Blend: Orbiting cluster <-> Horizontal corridor stream (`formation`) <-> Mobile vertical right-lane ribbon (`rail`)
       let lx = area.w * ox * fit;
@@ -1561,15 +1679,15 @@
 
       if (formation > .001) {
         lx = mix(lx, area.w * p.lane * .52, formation);
-        ly = mix(ly, area.w * bob * .032, formation);
+        ly = mix(ly, area.w * bob * .008, formation);
         scale = mix(scale, area.w * .72, formation);
-        localTurn = mix(localTurn, area.direction * (.16 + bob * .08), formation);
+        localTurn = mix(localTurn, area.direction * (.11 + bob * .022), formation);
       }
       if (rail > .001) {
-        lx = mix(lx, area.w * bob * .018, rail);
+        lx = mix(lx, area.w * bob * .014, rail);
         ly = mix(ly, area.w * p.lane * .36, rail);
         scale = mix(scale, area.w * .45, rail);
-        localTurn = mix(localTurn, bob * .14, rail);
+        localTurn = mix(localTurn, bob * .10, rail);
       }
 
       const wx = centerX + lx * cosG - ly * sinG;
@@ -1591,65 +1709,28 @@
       pose.r = Math.max(halfW, halfH);
       pose.lane = p.lane;
 
-      // Hard per-piece obstacle avoidance (zero-overlap guarantee against every DOM object!)
-      const safeLaneX = width <= 800
-        ? (mobileLane ? mobileLane.x : width - 38)
-        : (area.x >= width * .5 ? width - EDGE_PAD - 90 : EDGE_PAD + 90);
-      resolvePieceObstacles(pose, hudTop, safeLaneX);
+      // Axis-consistent safety barrier (rarely even invoked due to built-in >= 14px margin!)
+      resolvePieceObstacles(pose, hudTop, area.safeLaneX, area.inCorridor);
     }
 
-    // Compute safe halo scale from exact clearance around centerX, centerY
+    // Compute safe halo scale from exact clearance around centerX, centerY (shrink immediately, expand smoothly)
     const centerClearance = minObstacleClearance(centerX, centerY);
-    const maxSafeHaloR = Math.max(0, centerClearance - 10);
+    const maxSafeHaloR = Math.max(0, centerClearance - 14);
     const desiredHaloR = Math.max(1, area.w * .66);
-    const haloScale = Math.min(1, maxSafeHaloR / desiredHaloR);
+    const rawHaloScale = Math.min(1, maxSafeHaloR / desiredHaloR);
+    if (rawHaloScale < nav.haloScale) {
+      nav.haloScale = rawHaloScale;
+    } else {
+      nav.haloScale += (rawHaloScale - nav.haloScale) * (1 - Math.exp(-dt * 10));
+    }
+    const haloScale = Math.min(rawHaloScale, nav.haloScale);
 
     let drawnHaloR = 0;
 
-    // Compute dirty paint bounding box before drawing (full union of halo + wakes + all 4 pieces)
-    let minX = width, minY = height, maxX = 0, maxY = 0;
-    const includeBox = (bx0, by0, bx1, by1) => {
-      if (bx0 < minX) minX = bx0;
-      if (by0 < minY) minY = by0;
-      if (bx1 > maxX) maxX = bx1;
-      if (by1 > maxY) maxY = by1;
-    };
-
     const showAtmosphere = rail < .65 && formation < .92 && haloScale > .32;
     const showArrival = landed >= 0 && landed < .68 && haloScale > .35;
-    if (showAtmosphere || showArrival) {
-      const hr = desiredHaloR * haloScale + 18;
-      includeBox(centerX - hr, centerY - hr, centerX + hr, centerY + hr);
-    }
-    const wakeMargin = formation > .02 ? area.w * .54 + 20 : 0;
-    for (let i = 0; i < poses.length; i++) {
-      const p = poses[i];
-      const pad = p.r + 12;
-      includeBox(p.wx - pad - wakeMargin, p.wy - pad, p.wx + pad + wakeMargin, p.wy + pad);
-    }
 
-    const px0 = Math.max(0, Math.floor(minX));
-    const py0 = Math.max(0, Math.floor(minY));
-    const px1 = Math.min(width, Math.ceil(maxX));
-    const py1 = Math.min(height, Math.ceil(maxY));
-
-    if (px1 <= px0 || py1 <= py0) {
-      particleField.fill(0);
-      window.dispatchEvent(particleEvent);
-      return;
-    }
-
-    paintedRect.x = px0;
-    paintedRect.y = py0;
-    paintedRect.w = px1 - px0;
-    paintedRect.h = py1 - py0;
-    paintedRect.active = true;
-
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.save();
-    ctx.beginPath();
-    ctx.rect(paintedRect.x, paintedRect.y, paintedRect.w, paintedRect.h);
-    ctx.clip();
 
     // 1. Orbital atmosphere & arrival shimmer strictly clamped to open clearance
     if (showAtmosphere || showArrival) {
@@ -1705,6 +1786,8 @@
     debugState.formation = formation;
     debugState.contact = contactMix;
     debugState.haloRadius = drawnHaloR;
+    debugState.chapter = nav.chapter;
+    debugState.corridorActive = nav.flightActive;
 
     window.dispatchEvent(particleEvent);
   }
@@ -1719,6 +1802,12 @@
   function tick(now) {
     frame = 0;
     if (document.hidden || !ready) return;
+
+    // Detect browser zoom (Ctrl+Scroll), DPR changes, or viewport changes reliably every frame
+    const curDpr = window.devicePixelRatio || 1;
+    if (Math.abs(curDpr - lastDpr) > .001 || window.innerWidth !== lastWinW || window.innerHeight !== lastWinH) {
+      measure();
+    }
 
     const elapsed = previous ? (now - previous) : 16.667;
     const dt = Math.min(.034, Math.max(.001, elapsed / 1000));
@@ -1795,6 +1884,7 @@
   });
 
   window.addEventListener('resize', measure, { passive: true });
+  window.visualViewport?.addEventListener('resize', measure, { passive: true });
   window.addEventListener('load', measure, { once: true });
   if (window.ResizeObserver) new ResizeObserver(measure).observe(main);
   document.fonts?.ready.then(measure);

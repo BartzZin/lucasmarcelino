@@ -51,6 +51,7 @@
   const glowMint = makeGlowSprite('#ecfff5', 'rgba(176,247,210,.74)', 'rgba(130,232,184,.24)', 'rgba(130,232,184,0)');
 
   let width = 0, height = 0, ratio = 1, points = [];
+  let lastWinW = 0, lastWinH = 0, lastDpr = 0;
   let cachedBlocks = [];
   const activeLeft = new Float32Array(256);
   const activeRight = new Float32Array(256);
@@ -93,9 +94,19 @@
     height = box.height;
     if (width < 1 || height < 1) return;
 
-    ratio = Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(1_600_000 / (width * height)));
-    canvas.width = Math.max(1, Math.floor(width * ratio));
-    canvas.height = Math.max(1, Math.floor(height * ratio));
+    lastWinW = window.innerWidth;
+    lastWinH = window.innerHeight;
+    lastDpr = window.devicePixelRatio || 1;
+
+    ratio = Math.min(Math.max(.25, lastDpr), 1.5, Math.sqrt(1_600_000 / (width * height)));
+    const pw = Math.max(1, Math.round(width * ratio));
+    const ph = Math.max(1, Math.round(height * ratio));
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Stratified positions keep the quieter parts of the background populated.
     // Seeded jitter avoids a visible grid and keeps rotation/resizing stable.
@@ -103,6 +114,7 @@
     const cols = Math.max(1, Math.round(Math.sqrt(count * width / height)));
     const rows = Math.max(1, Math.ceil(count / cols));
     const gap = Math.min(width / cols, height / rows);
+    const radRatio = Math.max(.75, ratio);
     let seed = 25421;
     function random() {
       seed = (1664525 * seed + 1013904223) >>> 0;
@@ -123,7 +135,7 @@
         sprite,
         phase: random() * 6.2832,
         twinkleRate: .68 + random() * .95,
-        radius: Math.max(.65 / ratio, Math.min(2.5 / ratio, gap * (.009 + .012 * depth)))
+        radius: Math.max(.65 / radRatio, Math.min(2.5 / radRatio, gap * (.009 + .012 * depth)))
       };
     });
 
@@ -162,11 +174,16 @@
   }
 
   function draw(time, dt) {
+    if (width < 1 || height < 1) return;
     const sy = window.scrollY;
     updateActiveBlocks(sy);
 
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    ctx.clearRect(0, 0, width, height);
+    // Always clear the ENTIRE raw backing buffer in identity pixel coordinates (zero ghosting on zoom/DPR!)
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const scaleX = canvas.width / width;
+    const scaleY = canvas.height / height;
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
 
     const travel = width < 800 ? .75 : 1;
     const follow = 1 - Math.exp(-dt * 7.5);
@@ -255,7 +272,7 @@
 
       const glowIntensity = Math.max(pulse, twinkleBoost * .75);
       if (glowIntensity > .05) {
-        const extent = Math.min(5 + strength * 24, Math.max(3 / ratio, r * 4.2));
+        const extent = Math.min(5 + strength * 24, Math.max(3 / Math.max(.75, ratio), r * 4.2));
         ctx.globalAlpha = glowIntensity * .56;
         const halo = point.sprite === 2 ? glowMint : glowViolet;
         ctx.drawImage(halo, px - extent, py - extent, extent * 2, extent * 2);
@@ -273,6 +290,11 @@
   function tick(time) {
     frame = 0;
     if (document.hidden || !points.length) return;
+
+    const curDpr = window.devicePixelRatio || 1;
+    if (Math.abs(curDpr - lastDpr) > .001 || window.innerWidth !== lastWinW || window.innerHeight !== lastWinH) {
+      layout();
+    }
 
     const dt = lastPaint ? Math.min(.05, Math.max(.001, (time - lastPaint) / 1000)) : .0167;
     lastPaint = time;
@@ -348,6 +370,7 @@
   }, { passive: true });
 
   window.addEventListener('resize', layout, { passive: true });
+  window.visualViewport?.addEventListener('resize', layout, { passive: true });
   window.addEventListener('load', cacheTextBlocks, { once: true });
   const main = document.querySelector('#principal') || document.body;
   if (window.ResizeObserver && main) new ResizeObserver(cacheTextBlocks).observe(main);
