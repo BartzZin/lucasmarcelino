@@ -101,8 +101,7 @@ body {
     pointer-events: none;
     opacity: 0;
     background:
-      radial-gradient(circle closest-side, transparent 69%, rgb(190 137 248 / .08) 72%, rgb(222 177 255 / .26) 75%, rgb(185 134 252 / .11) 76%, transparent 82%),
-      radial-gradient(circle closest-side, rgb(204 154 255 / .22), rgb(171 112 245 / .13) 48%, rgb(155 97 232 / .04) 79%, transparent);
+      radial-gradient(circle closest-side, rgb(204 154 255 / .18), rgb(171 112 245 / .09) 48%, rgb(155 97 232 / .03) 76%, transparent 100%);
     transition: opacity .24s ease;
   }
   #cursor-glow[data-visible] { opacity: 1; }
@@ -449,7 +448,7 @@ h1 em { color: var(--accent); line-height: .95; }
 /* Chapters & Story Layout */
 .story section {
   position: relative;
-  padding: clamp(64px, 6.5vw, 118px) 0;
+  padding: clamp(104px, 8.8vw, 134px) 0;
   scroll-margin-top: var(--header-offset);
 }
 .chapter-inner { width: 55%; }
@@ -505,12 +504,9 @@ h2 i::after { content: ' /'; }
   opacity: .9;
 }
 
-/* Compact Consisa items with balanced visual rhythm */
+/* Compact Consisa items with balanced visual rhythm (uniform h3 typography across all cards) */
 .piece-compact {
   padding-block: clamp(18px, 1.9vw, 26px);
-}
-.piece-compact h3 {
-  font-size: clamp(21px, 1.8vw, 31px);
 }
 
 /* Signature Standout Highlight Card (20 min -> < 2 min) */
@@ -638,32 +634,32 @@ time {
 
 /* Contact Panel */
 .story #contato {
-  padding: clamp(96px, 13.5vw, 210px) 0 0;
+  padding: clamp(160px, 14vw, 224px) 0 0;
 }
 #contato .contact-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  width: min(86%, 1120px);
+  width: min(72%, 940px);
   margin-inline: auto;
-  padding: clamp(34px, 4vw, 64px) clamp(20px, 3.5vw, 52px);
+  padding: clamp(24px, min(2.8vw, 4vh), 46px) clamp(20px, 3vw, 48px);
   border: 1px solid rgb(164 118 196 / 0.65);
-  border-radius: clamp(24px, 3vw, 44px);
+  border-radius: clamp(24px, 3vw, 40px);
   background:
     radial-gradient(ellipse at 50% 0%, rgb(171 243 203 / 0.1), transparent 55%),
     radial-gradient(ellipse at 50% 55%, #492553 0%, #2b1739 52%, #201029 100%);
   box-shadow: 0 28px 80px rgb(13 5 22 / 0.56), inset 0 1px rgb(219 180 245 / 0.2);
 }
 #contato h2 {
-  font-size: clamp(38px, 5.6vw, 88px);
-  margin: 0 0 clamp(40px, 4.4vw, 66px);
+  font-size: clamp(34px, min(4.4vw, 6.4vh), 72px);
+  margin: 0 0 clamp(24px, min(2.8vw, 3.8vh), 44px);
 }
 #contato h2::after {
-  inset: auto 50% clamp(-28px, -1.9vw, -18px) auto;
+  inset: auto 50% clamp(-22px, -1.6vw, -14px) auto;
   translate: 50% 0;
-  width: clamp(42px, 5.4vw, 84px);
-  height: clamp(4px, .45vw, 7px);
+  width: clamp(42px, 5vw, 76px);
+  height: clamp(4px, .45vw, 6px);
   border-radius: 8px;
   background: var(--accent);
   transform-origin: center;
@@ -673,14 +669,14 @@ time {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: clamp(10px, 1.3vw, 22px);
-  min-height: clamp(50px, 5.6vw, 86px);
-  padding: 0 clamp(18px, 3.8vw, 58px);
+  gap: clamp(10px, 1.2vw, 18px);
+  min-height: clamp(46px, min(4.4vw, 6.8vh), 68px);
+  padding: 0 clamp(18px, 3.2vw, 48px);
   border: 1px solid var(--accent);
   border-radius: 999px;
   background: var(--accent);
   color: #162820;
-  font-size: clamp(16.5px, 2.2vw, 34px);
+  font-size: clamp(16px, min(1.75vw, 2.8vh), 26px);
   font-weight: 780;
   letter-spacing: -.025em;
   box-shadow: 0 14px 36px rgb(12 46 31 / 0.4), 0 0 26px rgb(171 243 203 / 0.22);
@@ -701,12 +697,12 @@ time {
   align-items: center;
   justify-content: center;
   gap: 10px 14px;
-  margin: clamp(16px, 2vw, 28px) 0 clamp(20px, 2.5vw, 36px);
+  margin: clamp(12px, min(1.4vw, 2vh), 20px) 0 clamp(14px, min(1.7vw, 2.4vh), 24px);
 }
 .phone {
   margin: 0;
   color: #d2b2ec;
-  font-size: clamp(17px, 2.2vw, 32px);
+  font-size: clamp(16px, min(1.8vw, 2.8vh), 26px);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
@@ -786,15 +782,15 @@ footer {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: clamp(40px, 5vw, 76px) 0 clamp(68px, 8vw, 116px);
-  gap: clamp(12px, 1.5vw, 22px);
+  padding: clamp(22px, min(2.8vw, 3.6vh), 46px) 0 clamp(34px, min(4.2vw, 5.6vh), 68px);
+  gap: clamp(8px, 1.1vw, 16px);
   color: #c6a1e8;
   transition: padding-bottom .3s ease;
 }
 html[data-cinema="playing"] footer,
 html[data-cinema="paused"] footer,
 html[data-cinema="finished"] footer {
-  padding-bottom: clamp(112px, 12vw, 156px);
+  padding-bottom: clamp(84px, 10vh, 118px);
 }
 .footer-name {
   font-size: clamp(19px, 1.9vw, 30px);
@@ -1056,13 +1052,13 @@ html[data-cinema="finished"] .cinema-toggle .icon-play,
   }
 
   .story section {
-    padding: 48px 0;
+    padding: 76px 0;
   }
   .story section:first-child {
     padding-top: 56px;
   }
   .story section:not(#contato) .chapter-inner {
-    width: calc(100% - clamp(56px, 19vw, 128px));
+    width: calc(100% - clamp(76px, 21vw, 128px));
   }
   .story section:nth-child(even) .chapter-inner {
     margin-left: 0;
@@ -1087,7 +1083,7 @@ html[data-cinema="finished"] .cinema-toggle .icon-play,
     margin: 0 0 6px;
   }
   .story #contato {
-    padding-top: clamp(96px, 24vw, 160px);
+    padding-top: clamp(148px, 36vw, 200px);
   }
   #contato .contact-panel {
     width: 100%;

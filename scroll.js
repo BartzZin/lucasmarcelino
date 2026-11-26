@@ -429,8 +429,8 @@
 
     // Quick, seamless 0.65s ease-in dolly ramp so downward motion is immediately visible
     const rampFactor = 0.22 + 0.78 * smoothstep(cinemaElapsed / 0.65);
-    // Velvety slow movie-credits pace (~62 px/s desktop, ~52 px/s mobile at 1x)
-    const baseSpeed = desktopQuery.matches ? 62 : 52;
+    // Velvety movie-credits pace (~78 px/s desktop, ~64 px/s mobile at 1x)
+    const baseSpeed = desktopQuery.matches ? 78 : 64;
 
     // Smooth ease-out landing on #contato
     const decelZone = Math.min(220, viewportH * 0.28);
