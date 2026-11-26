@@ -3,103 +3,405 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#10101a">
-  <meta name="description" content="Currículo de Lucas Marcelino Lara, desenvolvedor e analista de sistemas na Consisa Sistemas. Conheça seus projetos em documentos fiscais, integrações, Delphi e aprendizado de máquina.">
+  <meta name="theme-color" content="#190d23">
   <title>Lucas Marcelino Lara · Desenvolvimento de sistemas</title>
+  <meta name="description" content="Currículo de Lucas Marcelino Lara, desenvolvedor e analista de sistemas na Consisa Sistemas. Conheça seus projetos em documentos fiscais, integrações, Delphi e aprendizado de máquina.">
+  <link rel="canonical" href="https://bartzzin.github.io/lucasmarcelino/">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="profile">
+  <meta property="og:locale" content="pt_BR">
+  <meta property="og:url" content="https://bartzzin.github.io/lucasmarcelino/">
+  <meta property="og:site_name" content="Lucas Marcelino Lara">
+  <meta property="og:title" content="Lucas Marcelino Lara · Desenvolvimento de sistemas">
+  <meta property="og:description" content="Desenvolvedor e analista de sistemas na Consisa Sistemas em Francisco Beltrão, PR. Projetos em Delphi, documentos fiscais, integrações, Python e ciência de dados.">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Lucas Marcelino Lara · Desenvolvimento de sistemas">
+  <meta name="twitter:description" content="Desenvolvedor e analista de sistemas na Consisa Sistemas. Projetos em Delphi, documentos fiscais, integrações, Python e aprendizado de máquina.">
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Person",
+      "name": "Lucas Marcelino Lara",
+      "jobTitle": "Desenvolvedor e analista de sistemas",
+      "url": "https://bartzzin.github.io/lucasmarcelino/",
+      "telephone": "+55-46-98415-9384",
+      "address": {
+        "@type": "PostalAddress",
+        "addressLocality": "Francisco Beltrão",
+        "addressRegion": "PR",
+        "addressCountry": "BR"
+      },
+      "worksFor": {
+        "@type": "Organization",
+        "name": "Consisa Sistemas"
+      },
+      "alumniOf": [
+        {
+          "@type": "CollegeOrUniversity",
+          "name": "Universidade Paranaense (UNIPAR)"
+        },
+        {
+          "@type": "CollegeOrUniversity",
+          "name": "Universidade Tecnológica Federal do Paraná (UTFPR)"
+        }
+      ],
+      "sameAs": [
+        "https://www.linkedin.com/in/lucas-marcelino-000327238/",
+        "https://github.com/BartzZin"
+      ],
+      "knowsAbout": [
+        "Delphi",
+        "Pascal",
+        "Python",
+        "FastAPI",
+        "PHP",
+        "Laravel",
+        "SQLite",
+        "Pandas",
+        "NumPy",
+        "Matplotlib",
+        "scikit-learn",
+        "Flask",
+        "PostgreSQL",
+        "C#",
+        "Entity Framework Core",
+        "Docker",
+        "Ciência de Dados",
+        "Documentos Fiscais",
+        "NF-e",
+        "MDF-e",
+        "DUIMP"
+      ]
+    }
+  </script>
   <link rel="preload" href="./fontes/nunito.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="./style.css?v=titulo-ajustado">
-  <script src="./particles.js?v=particulas" defer></script>
-  <script src="./puzzle.js?v=movimento-lateral" defer></script>
-  <script src="./scroll.js?v=titulo-ajustado" defer></script>
+  <link rel="stylesheet" href="./style.css?v=2.0">
+  <script src="./particles.js?v=2.0" defer></script>
+  <script src="./puzzle.js?v=2.0" defer></script>
+  <script src="./scroll.js?v=2.0" defer></script>
 </head>
 <body id="inicio">
   <a class="skip" href="#principal">Pular para o currículo</a>
   <canvas id="particles" aria-hidden="true"></canvas>
   <div id="cursor-glow" aria-hidden="true"></div>
   <canvas id="puzzle" aria-hidden="true"></canvas>
+  <div id="cinema-vignette" aria-hidden="true"></div>
+
   <header class="bar">
     <nav aria-label="Navegação principal">
       <a href="#trajetoria">
         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h6a3 3 0 0 1 0 6h-4a3 3 0 0 0 0 6h6"/></svg>
         <span class="water-text">Trajetória</span>
       </a>
+      <a href="#tecnologias">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5M13.5 4.5l-3 15"/></svg>
+        <span class="water-text">Tecnologias</span>
+      </a>
       <a href="#projetos">
         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg>
         <span class="water-text">Projetos</span>
+      </a>
+      <a href="#arquivo">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+        <span class="water-text">Arquivo</span>
       </a>
       <a href="#contato">
         <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5h-1L5 21l1.6-4.1A7.5 7.5 0 1 1 20 11.5Z"/><path d="M9 11.5h7"/></svg>
         <span class="water-text">Contato</span>
       </a>
+      <button type="button" class="nav-cinema" data-cinema-trigger aria-label="Iniciar modo apresentação" title="Iniciar modo apresentação">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M7.5 5.5v13l11-6.5z"/></svg>
+        <span class="nav-cinema-label">Apresentação</span>
+      </button>
     </nav>
   </header>
+
   <main id="principal">
     <section class="intro" aria-labelledby="nome">
+      <div class="eyebrow">
+        <span class="eyebrow-dot" aria-hidden="true"></span>
+        <span>Francisco Beltrão, PR · Consisa Sistemas</span>
+      </div>
       <h1 id="nome"><span class="water-text">Lucas</span> <span>Marcelino</span> <em>Lara.</em></h1>
-      <p>Desenvolvedor e analista de sistemas na Consisa Sistemas.</p>
+      <p class="intro-lead">Desenvolvedor e analista de sistemas na Consisa Sistemas.</p>
       <div class="actions">
-        <a class="explore" href="#trajetoria">
+        <a class="explore" href="#trajetoria" data-cinema-trigger>
           <span>Explorar trajetória</span>
           <span class="explore-icon" aria-hidden="true">
             <svg focusable="false" viewBox="0 0 24 24"><path d="M12 4v15m-6-6 6 6 6-6"/></svg>
           </span>
         </a>
+        <button type="button" class="action-secondary" data-print-trigger hidden>
+          <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M6 9V4h12v5M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="6" rx="1"/></svg>
+          <span>Baixar / Imprimir PDF</span>
+        </button>
       </div>
     </section>
+
     <div class="mobile-flight" aria-hidden="true"></div>
+
     <div class="story">
-      <section id="trajetoria">
+      <section id="trajetoria" data-chapter-label="01 · Trajetória">
         <div class="chapter-inner">
-        <h2><i aria-hidden="true">01</i> <span class="water-text">Trajetória</span></h2>
-        <article class="piece"><small>Experiência</small><h3><span class="water-text">Consisa Sistemas</span></h3><p>Atuo com desenvolvimento e análise de sistemas em Francisco Beltrão, Paraná.</p></article>
-        <article class="piece"><small>Formação</small><h3><span class="water-text">UNIPAR</span></h3><p>Sou tecnólogo em Sistemas pela Universidade Paranaense.</p></article>
-        <article class="piece"><small>Pós-graduação concluída</small><h3><span class="water-text">Ciência de Dados · UTFPR</span></h3><p>Formação como cientista de dados pela Universidade Tecnológica Federal do Paraná. Nos projetos acadêmicos, implementei redes neurais e avaliei o desempenho dos modelos com Python.</p></article>
+          <h2><i aria-hidden="true">01</i> <span class="water-text">Trajetória</span></h2>
+          <article class="piece">
+            <small>Experiência</small>
+            <h3><span class="water-text">Consisa Sistemas</span></h3>
+            <p>Atuo com desenvolvimento e análise de sistemas em Francisco Beltrão, Paraná.</p>
+            <ul class="piece-tags" aria-label="Destaques">
+              <li>Desenvolvimento</li>
+              <li>Análise de sistemas</li>
+              <li>Francisco Beltrão, PR</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Formação</small>
+            <h3><span class="water-text">UNIPAR</span></h3>
+            <p>Sou tecnólogo em Sistemas pela Universidade Paranaense.</p>
+            <ul class="piece-tags" aria-label="Destaques">
+              <li>Tecnólogo em Sistemas</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Pós-graduação concluída</small>
+            <h3><span class="water-text">Ciência de Dados · UTFPR</span></h3>
+            <p>Formação como cientista de dados pela Universidade Tecnológica Federal do Paraná. Nos projetos acadêmicos, implementei redes neurais e avaliei o desempenho dos modelos com Python.</p>
+            <ul class="piece-tags" aria-label="Tecnologias e áreas">
+              <li>Ciência de Dados</li>
+              <li>Redes neurais</li>
+              <li>Python</li>
+            </ul>
+          </article>
         </div>
       </section>
-      <section id="tecnologias">
+
+      <section id="tecnologias" data-chapter-label="02 · Tecnologias">
         <div class="chapter-inner">
-        <h2><i aria-hidden="true">02</i> <span class="water-text">Tecnologias</span></h2>
-        <article class="piece"><small>Aplicações</small><h3><span class="water-text">Do desktop à web</span></h3><p>Meus projetos passam por formulários em Delphi, aplicações em PHP e Laravel e serviços em Python. No AutoSom, essas camadas trabalham juntas: o desktop envia o áudio, a API faz a análise e o SQLite guarda o histórico.</p></article>
-        <article class="piece"><small>Dados</small><h3><span class="water-text">Do dado bruto ao experimento</span></h3><p>Uso Pandas e NumPy para preparar dados e Matplotlib para visualizar padrões. Nos estudos de classificação, trabalho com scikit-learn para comparar modelos, parâmetros e estratégias de validação.</p></article>
-        <article class="piece"><small>Formação complementar</small><h3><span class="water-text">Estudos na Alura</span></h3><p>Windows Forms com C#, Entity Framework Core e Docker fazem parte do meu percurso de estudos.</p></article>
-        <article class="piece"><small>Experimentos pessoais</small><h3><span class="water-text">Flask e geração de imagens</span></h3><p>Também compartilhei um CRUD em Flask com PostgreSQL e um protótipo de geração local de imagens com Stable Diffusion XL. São duas maneiras de explorar Python além dos experimentos de classificação.</p></article>
+          <h2><i aria-hidden="true">02</i> <span class="water-text">Tecnologias</span></h2>
+          <article class="piece">
+            <small>Aplicações</small>
+            <h3><span class="water-text">Do desktop à web</span></h3>
+            <p>Meus projetos passam por formulários em Delphi, aplicações em PHP e Laravel e serviços em Python. No AutoSom, essas camadas trabalham juntas: o desktop envia o áudio, a API faz a análise e o SQLite guarda o histórico.</p>
+            <ul class="piece-tags" aria-label="Tecnologias">
+              <li>Delphi</li>
+              <li>PHP</li>
+              <li>Laravel</li>
+              <li>Python</li>
+              <li>SQLite</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Dados</small>
+            <h3><span class="water-text">Do dado bruto ao experimento</span></h3>
+            <p>Uso Pandas e NumPy para preparar dados e Matplotlib para visualizar padrões. Nos estudos de classificação, trabalho com scikit-learn para comparar modelos, parâmetros e estratégias de validação.</p>
+            <ul class="piece-tags" aria-label="Tecnologias">
+              <li>Pandas</li>
+              <li>NumPy</li>
+              <li>Matplotlib</li>
+              <li>scikit-learn</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Formação complementar</small>
+            <h3><span class="water-text">Estudos na Alura</span></h3>
+            <p>Windows Forms com C#, Entity Framework Core e Docker fazem parte do meu percurso de estudos.</p>
+            <ul class="piece-tags" aria-label="Tecnologias">
+              <li>C#</li>
+              <li>Windows Forms</li>
+              <li>Entity Framework Core</li>
+              <li>Docker</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Experimentos pessoais</small>
+            <h3><span class="water-text">Flask e geração de imagens</span></h3>
+            <p>Também compartilhei um CRUD em Flask com PostgreSQL e um protótipo de geração local de imagens com Stable Diffusion XL. São duas maneiras de explorar Python além dos experimentos de classificação.</p>
+            <ul class="piece-tags" aria-label="Tecnologias">
+              <li>Flask</li>
+              <li>PostgreSQL</li>
+              <li>Stable Diffusion XL</li>
+            </ul>
+          </article>
         </div>
       </section>
-      <section id="projetos">
+
+      <section id="projetos" data-chapter-label="03 · Projetos">
         <div class="chapter-inner">
-        <h2><i aria-hidden="true">03</i> <span class="water-text">Projetos</span></h2>
-        <article class="piece"><small>Consisa Sistemas · Ferramentas de desenvolvimento</small><h3><span class="water-text">IDE para Delphi</span></h3><p>Criei uma IDE própria para compilar e depurar aplicações Delphi.</p></article>
-        <article class="piece"><small>Consisa Sistemas · Desempenho</small><h3><span class="water-text">Otimização de compilação</span></h3><p>Reduzi o tempo de compilação de um sistema de cerca de 20 minutos para menos de 2 minutos.</p></article>
-        <article class="piece"><small>Consisa Sistemas · Automação</small><h3><span class="water-text">Automação de aplicação desktop de 32 bits</span></h3></article>
-        <article class="piece"><small>Consisa Sistemas · Comércio exterior</small><h3><span class="water-text">DUIMP</span></h3><p>Atuei no fluxo da Declaração Única de Importação.</p></article>
-        <article class="piece"><small>Consisa Sistemas · Documentos fiscais</small><h3><span class="water-text">Novo layout da NF-e</span></h3><p>Trabalhei na adaptação da Nota Fiscal Eletrônica ao novo layout.</p></article>
-        <article class="piece"><small>Consisa Sistemas · Documentos fiscais</small><h3><span class="water-text">MDF-e em contingência</span></h3><p>Atuei no fluxo de emissão em contingência do Manifesto Eletrônico de Documentos Fiscais.</p></article>
-        <article class="piece"><small>Consisa Sistemas · Documentos fiscais</small><h3><span class="water-text">Envio de eventos da NF-e</span></h3><p>Trabalhei no fluxo de transmissão de eventos da Nota Fiscal Eletrônica.</p></article>
-        <article class="piece"><small>Consisa Sistemas · Integração financeira</small><h3><span class="water-text">Integração de boletos</span></h3></article>
-        <article class="piece"><small>Consisa Sistemas · Integração de equipamentos</small><h3><span class="water-text">Integração com balança Bizerba</span></h3></article>
-        <article class="piece"><small>Delphi 12 · FastAPI · SQLite</small><h3><a href="https://github.com/BartzZin/ProjetoIntegrador"><span class="water-text">AutoSom Diagnóstico</span> <span aria-hidden="true">↗</span></a></h3><p>Construí uma aplicação desktop que envia gravações de motores a uma API em Python. O modelo distingue sons normais de anomalias acústicas, e o aplicativo salva o resultado no histórico local.</p></article>
-        <article class="piece"><small>Python · scikit-learn</small><h3><a href="https://github.com/BartzZin/AnaliseDEEPLearning"><span class="water-text">Rede neural multicamadas</span> <span aria-hidden="true">↗</span></a></h3><p>Comparei o efeito da normalização, da taxa de aprendizado e da quantidade de neurônios em um classificador. Avaliei os resultados com validação cruzada e exportei as métricas em CSV.</p></article>
-        <article class="piece"><small>Python · Classificação binária</small><h3><a href="https://github.com/BartzZin/ProjetoDeepLearning"><span class="water-text">Treinamento de um Perceptron</span> <span aria-hidden="true">↗</span></a></h3><p>Implementei um treinamento por épocas para acompanhar como o classificador aprende, com uma interface gráfica para explorar o experimento.</p></article>
+          <h2><i aria-hidden="true">03</i> <span class="water-text">Projetos</span></h2>
+          <article class="piece">
+            <small>Consisa Sistemas · Ferramentas de desenvolvimento</small>
+            <h3><span class="water-text">IDE para Delphi</span></h3>
+            <p>Criei uma IDE própria para compilar e depurar aplicações Delphi.</p>
+            <ul class="piece-tags" aria-label="Escopo">
+              <li>Delphi</li>
+              <li>Compilação</li>
+              <li>Depuração</li>
+            </ul>
+          </article>
+          <article class="piece piece-highlight">
+            <div class="piece-head">
+              <small>Consisa Sistemas · Desempenho</small>
+              <span class="metric-badge" aria-label="Redução de 20 minutos para menos de 2 minutos">20 min <span aria-hidden="true">→</span> &lt; 2 min</span>
+            </div>
+            <h3><span class="water-text">Otimização de compilação</span></h3>
+            <p>Reduzi o tempo de compilação de um sistema de cerca de 20 minutos para menos de 2 minutos.</p>
+            <ul class="piece-tags" aria-label="Escopo">
+              <li>Desempenho</li>
+              <li>Compilação</li>
+            </ul>
+          </article>
+          <article class="piece piece-compact">
+            <small>Consisa Sistemas · Automação</small>
+            <h3><span class="water-text">Automação de aplicação desktop de 32 bits</span></h3>
+            <ul class="piece-tags" aria-label="Escopo">
+              <li>Consisa Sistemas</li>
+              <li>Automação</li>
+              <li>Desktop 32 bits</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Consisa Sistemas · Comércio exterior</small>
+            <h3><span class="water-text">DUIMP</span></h3>
+            <p>Atuei no fluxo da Declaração Única de Importação.</p>
+            <ul class="piece-tags" aria-label="Escopo">
+              <li>Comércio exterior</li>
+              <li>DUIMP</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Consisa Sistemas · Documentos fiscais</small>
+            <h3><span class="water-text">Novo layout da NF-e</span></h3>
+            <p>Trabalhei na adaptação da Nota Fiscal Eletrônica ao novo layout.</p>
+            <ul class="piece-tags" aria-label="Escopo">
+              <li>NF-e</li>
+              <li>Documentos fiscais</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Consisa Sistemas · Documentos fiscais</small>
+            <h3><span class="water-text">MDF-e em contingência</span></h3>
+            <p>Atuei no fluxo de emissão em contingência do Manifesto Eletrônico de Documentos Fiscais.</p>
+            <ul class="piece-tags" aria-label="Escopo">
+              <li>MDF-e</li>
+              <li>Contingência</li>
+              <li>Documentos fiscais</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Consisa Sistemas · Documentos fiscais</small>
+            <h3><span class="water-text">Envio de eventos da NF-e</span></h3>
+            <p>Trabalhei no fluxo de transmissão de eventos da Nota Fiscal Eletrônica.</p>
+            <ul class="piece-tags" aria-label="Escopo">
+              <li>NF-e</li>
+              <li>Eventos fiscais</li>
+            </ul>
+          </article>
+          <article class="piece piece-compact">
+            <small>Consisa Sistemas · Integração financeira</small>
+            <h3><span class="water-text">Integração de boletos</span></h3>
+            <ul class="piece-tags" aria-label="Escopo">
+              <li>Consisa Sistemas</li>
+              <li>Integração financeira</li>
+              <li>Boletos</li>
+            </ul>
+          </article>
+          <article class="piece piece-compact">
+            <small>Consisa Sistemas · Integração de equipamentos</small>
+            <h3><span class="water-text">Integração com balança Bizerba</span></h3>
+            <ul class="piece-tags" aria-label="Escopo">
+              <li>Consisa Sistemas</li>
+              <li>Equipamentos</li>
+              <li>Bizerba</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Delphi 12 · FastAPI · SQLite</small>
+            <h3><a href="https://github.com/BartzZin/ProjetoIntegrador" target="_blank" rel="noopener noreferrer"><span class="water-text">AutoSom Diagnóstico</span> <span aria-hidden="true">↗</span></a></h3>
+            <p>Construí uma aplicação desktop que envia gravações de motores a uma API em Python. O modelo distingue sons normais de anomalias acústicas, e o aplicativo salva o resultado no histórico local.</p>
+            <ul class="piece-tags" aria-label="Tecnologias">
+              <li>Delphi 12</li>
+              <li>FastAPI</li>
+              <li>Python</li>
+              <li>SQLite</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Python · scikit-learn</small>
+            <h3><a href="https://github.com/BartzZin/AnaliseDEEPLearning" target="_blank" rel="noopener noreferrer"><span class="water-text">Rede neural multicamadas</span> <span aria-hidden="true">↗</span></a></h3>
+            <p>Comparei o efeito da normalização, da taxa de aprendizado e da quantidade de neurônios em um classificador. Avaliei os resultados com validação cruzada e exportei as métricas em CSV.</p>
+            <ul class="piece-tags" aria-label="Tecnologias">
+              <li>Python</li>
+              <li>scikit-learn</li>
+              <li>Validação cruzada</li>
+            </ul>
+          </article>
+          <article class="piece">
+            <small>Python · Classificação binária</small>
+            <h3><a href="https://github.com/BartzZin/ProjetoDeepLearning" target="_blank" rel="noopener noreferrer"><span class="water-text">Treinamento de um Perceptron</span> <span aria-hidden="true">↗</span></a></h3>
+            <p>Implementei um treinamento por épocas para acompanhar como o classificador aprende, com uma interface gráfica para explorar o experimento.</p>
+            <ul class="piece-tags" aria-label="Tecnologias">
+              <li>Python</li>
+              <li>Classificação binária</li>
+              <li>Interface gráfica</li>
+            </ul>
+          </article>
         </div>
       </section>
-      <section id="arquivo">
+
+      <section id="arquivo" data-chapter-label="04 · Arquivo">
         <div class="chapter-inner">
-        <h2><i aria-hidden="true">04</i> <span class="water-text">Arquivo</span></h2>
-        <p class="section-note">Uma linha do tempo dos meus repositórios públicos.</p>
-        <ol class="archive">
-          <li class="piece"><time datetime="2023-06">Jun 2023</time><div><h3><a href="https://github.com/BartzZin/SismarDelphi"><span class="water-text">Sismar Delphi</span> <span aria-hidden="true">↗</span></a></h3><p>Aplicação em Pascal com formulários e acesso a banco de dados.</p></div></li>
-          <li class="piece"><time datetime="2023-12">Dez 2023</time><div><h3><a href="https://github.com/BartzZin/DesafioConsisaJunior"><span class="water-text">Desafio de programação em Delphi</span> <span aria-hidden="true">↗</span></a></h3></div></li>
-          <li class="piece"><time datetime="2024-03">Mar 2024</time><div><h3><a href="https://github.com/BartzZin/DensenvolvimentoAPO"><span class="water-text">Desenvolvimento APO</span> <span aria-hidden="true">↗</span></a></h3><p>Projeto acadêmico de desenvolvimento web com PHP e Laravel.</p></div></li>
-          <li class="piece"><time datetime="2025-12">Dez 2025</time><div><h3><a href="https://github.com/BartzZin/KDDCriptoAtivos"><span class="water-text">KDD em criptoativos</span> <span aria-hidden="true">↗</span></a></h3><p>Tratei lacunas e duplicatas nas séries de preços para comparar a volatilidade do Bitcoin e de altcoins.</p></div></li>
-          <li class="piece"><time datetime="2026-05">Mai 2026</time><div><h3><a href="https://github.com/BartzZin/AutoEncoder"><span class="water-text">Autoencoder</span> <span aria-hidden="true">↗</span></a></h3><p>Explorei como remover ruído de imagens de dígitos manuscritos do MNIST e medir o efeito do pré-treinamento na classificação.</p></div></li>
-          <li class="piece"><time datetime="2026-10">Out 2026</time><div><h3><a href="https://github.com/BartzZin/mlops-pipeline"><span class="water-text">Pipeline de MLOps</span> <span aria-hidden="true">↗</span></a></h3><p>Separei preparação, treino, avaliação e predição em etapas para agrupar coordenadas geográficas com K-Means. O pipeline inclui testes e registra os resultados em JSON.</p></div></li>
-        </ol>
+          <h2><i aria-hidden="true">04</i> <span class="water-text">Arquivo</span></h2>
+          <p class="section-note">Uma linha do tempo dos meus repositórios públicos.</p>
+          <ol class="archive">
+            <li class="piece">
+              <time datetime="2023-06">Jun 2023</time>
+              <div>
+                <h3><a href="https://github.com/BartzZin/SismarDelphi" target="_blank" rel="noopener noreferrer"><span class="water-text">Sismar Delphi</span> <span aria-hidden="true">↗</span></a></h3>
+                <p>Aplicação em Pascal com formulários e acesso a banco de dados.</p>
+              </div>
+            </li>
+            <li class="piece piece-compact">
+              <time datetime="2023-12">Dez 2023</time>
+              <div>
+                <h3><a href="https://github.com/BartzZin/DesafioConsisaJunior" target="_blank" rel="noopener noreferrer"><span class="water-text">Desafio de programação em Delphi</span> <span aria-hidden="true">↗</span></a></h3>
+              </div>
+            </li>
+            <li class="piece">
+              <time datetime="2024-03">Mar 2024</time>
+              <div>
+                <h3><a href="https://github.com/BartzZin/DensenvolvimentoAPO" target="_blank" rel="noopener noreferrer"><span class="water-text">Desenvolvimento APO</span> <span aria-hidden="true">↗</span></a></h3>
+                <p>Projeto acadêmico de desenvolvimento web com PHP e Laravel.</p>
+              </div>
+            </li>
+            <li class="piece">
+              <time datetime="2025-12">Dez 2025</time>
+              <div>
+                <h3><a href="https://github.com/BartzZin/KDDCriptoAtivos" target="_blank" rel="noopener noreferrer"><span class="water-text">KDD em criptoativos</span> <span aria-hidden="true">↗</span></a></h3>
+                <p>Tratei lacunas e duplicatas nas séries de preços para comparar a volatilidade do Bitcoin e de altcoins.</p>
+              </div>
+            </li>
+            <li class="piece">
+              <time datetime="2026-05">Mai 2026</time>
+              <div>
+                <h3><a href="https://github.com/BartzZin/AutoEncoder" target="_blank" rel="noopener noreferrer"><span class="water-text">Autoencoder</span> <span aria-hidden="true">↗</span></a></h3>
+                <p>Explorei como remover ruído de imagens de dígitos manuscritos do MNIST e medir o efeito do pré-treinamento na classificação.</p>
+              </div>
+            </li>
+            <li class="piece">
+              <time datetime="2026-10">Out 2026</time>
+              <div>
+                <h3><a href="https://github.com/BartzZin/mlops-pipeline" target="_blank" rel="noopener noreferrer"><span class="water-text">Pipeline de MLOps</span> <span aria-hidden="true">↗</span></a></h3>
+                <p>Separei preparação, treino, avaliação e predição em etapas para agrupar coordenadas geográficas com K-Means. O pipeline inclui testes e registra os resultados em JSON.</p>
+              </div>
+            </li>
+          </ol>
         </div>
       </section>
-      <section id="contato" aria-labelledby="contato-titulo">
+
+      <section id="contato" data-chapter-label="Contato" aria-labelledby="contato-titulo">
         <div class="chapter-inner contact-panel">
           <h2 id="contato-titulo"><span class="water-text">Vamos conversar?</span></h2>
-          <a class="whatsapp" href="https://wa.me/5546984159384">
+          <a class="whatsapp" href="https://wa.me/5546984159384" target="_blank" rel="noopener noreferrer">
             <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21.5 11.7a9.5 8.6 0 0 1-9.5 8.6 10.5 10.5 0 0 1-3.4-.6L3 21.8l1.5-4.5a8.1 8.1 0 0 1-2-5.6A9.5 8.6 0 0 1 12 3.1a9.5 8.6 0 0 1 9.5 8.6Z"/>
               <path d="M8 11.7h.1m3.9 0h.1m3.9 0h.1" stroke-width="2.3"/>
@@ -109,21 +411,55 @@
               <path d="M5 19 19 5M8 5h11v11"/>
             </svg>
           </a>
-          <p class="phone">+55 (46) 98415-9384</p>
+          <div class="phone-row">
+            <p class="phone">+55 (46) 98415-9384</p>
+            <button type="button" class="copy-phone" data-copy-phone data-copy-value="+5546984159384" aria-label="Copiar número de telefone +55 46 98415-9384">
+              <svg class="icon-copy" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <svg class="icon-check" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
+              <span class="copy-label-default">Copiar</span>
+              <span class="copy-label-done">Copiado</span>
+            </button>
+          </div>
           <div class="links">
-            <a href="https://www.linkedin.com/in/lucas-marcelino-000327238/"><span class="water-text">LinkedIn</span> <span aria-hidden="true">↗</span></a>
-            <a href="https://github.com/BartzZin"><span class="water-text">GitHub</span> <span aria-hidden="true">↗</span></a>
+            <a href="https://www.linkedin.com/in/lucas-marcelino-000327238/" target="_blank" rel="noopener noreferrer"><span class="water-text">LinkedIn</span> <span aria-hidden="true">↗</span></a>
+            <a href="https://github.com/BartzZin" target="_blank" rel="noopener noreferrer"><span class="water-text">GitHub</span> <span aria-hidden="true">↗</span></a>
           </div>
         </div>
       </section>
     </div>
   </main>
+
   <footer>
     <span class="footer-name">Lucas Marcelino Lara</span>
     <div class="footer-actions">
-      <button type="button" id="print" hidden>Imprimir currículo</button>
+      <button type="button" id="print" data-print-trigger hidden>Imprimir currículo</button>
+      <button type="button" class="footer-cinema" data-cinema-trigger>
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M7.5 5.5v13l11-6.5z"/></svg>
+        <span>Rever apresentação</span>
+      </button>
       <a href="#inicio">Voltar ao início <span aria-hidden="true">↑</span></a>
     </div>
   </footer>
+
+  <aside id="cinema-hud" class="cinema-hud" role="region" aria-label="Controle do modo apresentação" hidden>
+    <div class="cinema-hud-meta">
+      <span class="cinema-dot" aria-hidden="true"></span>
+      <span class="cinema-chapter" data-cinema-chapter aria-live="polite">01 · Trajetória</span>
+    </div>
+    <div class="cinema-track" aria-hidden="true">
+      <div class="cinema-fill" data-cinema-fill></div>
+    </div>
+    <div class="cinema-controls">
+      <button type="button" class="cinema-btn cinema-toggle" data-cinema-toggle aria-pressed="false" aria-label="Pausar apresentação">
+        <svg class="icon-pause" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+        <svg class="icon-play" aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M7.5 5.5v13l11-6.5z"/></svg>
+        <span data-cinema-toggle-label>Pausar</span>
+      </button>
+      <button type="button" class="cinema-btn cinema-speed" data-cinema-speed aria-label="Alterar velocidade da apresentação">1×</button>
+      <button type="button" class="cinema-btn cinema-exit" data-cinema-exit aria-label="Sair do modo apresentação" title="Sair (Esc)">
+        <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>
+      </button>
+    </div>
+  </aside>
 </body>
 </html>

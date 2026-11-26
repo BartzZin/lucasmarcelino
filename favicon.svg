@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#321848"/>
+      <stop offset="55%" stop-color="#1e0f2b"/>
+      <stop offset="100%" stop-color="#12081b"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="8" y1="4" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#e3bfff" stop-opacity=".75"/>
+      <stop offset="50%" stop-color="#8b5cb2" stop-opacity=".35"/>
+      <stop offset="100%" stop-color="#abf3cb" stop-opacity=".65"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="12" y1="12" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ebd1ff"/>
+      <stop offset="48%" stop-color="#c988ff"/>
+      <stop offset="100%" stop-color="#8246c2"/>
+    </linearGradient>
+    <linearGradient id="mint" x1="30" y1="26" x2="54" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#e7fff2"/>
+      <stop offset="48%" stop-color="#abf3cb"/>
+      <stop offset="100%" stop-color="#48b883"/>
+    </linearGradient>
+    <linearGradient id="lilac" x1="34" y1="12" x2="52" y2="30" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#b987e8"/>
+      <stop offset="100%" stop-color="#623592"/>
+    </linearGradient>
+    <linearGradient id="sage" x1="14" y1="34" x2="32" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7cdbb2"/>
+      <stop offset="100%" stop-color="#397e68"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#bg)" stroke="url(#rim)" stroke-width="2"/>
+  <path d="M15 17a4 4 0 0 1 4-4h10v6.2a4.3 4.3 0 1 1 0 7.6V31h-5.8a4.3 4.3 0 1 0-7.4 0H15V17Z" fill="url(#violet)"/>
+  <path d="M35 13h10a4 4 0 0 1 4 4v14h-6.2a4.3 4.3 0 1 1-7.6 0H31v-5.2a3.4 3.4 0 1 0 0-5.6V13h4Z" fill="url(#lilac)" opacity=".88"/>
+  <path d="M15 35h5.2a3.4 3.4 0 1 0 5.6 0H31v6.2a4.3 4.3 0 1 0 0 7.6V51H19a4 4 0 0 1-4-4V35Z" fill="url(#sage)" opacity=".88"/>
+  <path d="M33 33h5.2a3.4 3.4 0 1 0 5.6 0H49v14a4 4 0 0 1-4 4H33v-4.2a3.4 3.4 0 1 1 0-5.6V33Z" fill="url(#mint)"/>
+  <path d="M18.5 16.5h7.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity=".65"/>
+  <path d="M40.5 47.5h5" stroke="#fff" stroke-width="1.8" stroke-linecap="round" opacity=".55"/>
+</svg>
